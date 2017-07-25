@@ -62,7 +62,8 @@ function processAttachment (fileID,Rs,xlsFile){
   if (report.timesheets.length==0){Rs.Results.push('WARNING: File "' + xlsFile + '"contains no TimeCards, skipping...');Rs.ErrNum++;return;}
   //name cards and file
   for (var s in report.timesheets){
-    (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO) : report.ShNames.push(report.timesheets[s].EmplName+'_'+report.timesheets[s].EmplID);
+    (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO+'_'+report.timesheets[s].EmplName.split(',')[0]) 
+    : report.ShNames.push(report.timesheets[s].EmplName+'_'+report.timesheets[s].EmplID);
   }
   //if no DB data found:
   if (report.Client ==-1 || !report.Client) {
@@ -73,6 +74,7 @@ function processAttachment (fileID,Rs,xlsFile){
   if (report.skipFile) {Rs.Results.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');Rs.ErrNum++;return;}
   if (report.ShNames.length!=report.shts.length-1){Rs.Results.push('NOTE: Report "' + report.NewTimeSheetFileName + '"has '+ Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
   formatTCards (report);
+  (report.NameByPO) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
   var st=1;
 }
 
@@ -103,6 +105,7 @@ function formatTCards (report){
     sh.setRowHeight(1, Number(logoHxW[0]) + 4);
     sh.getRange(1, 1).setHorizontalAlignment("left").setVerticalAlignment("middle");
     sh.insertImage(logo, 1, 1);
+    sh.setName(report.ShNames[s]);
   }
 }
 
