@@ -7,7 +7,7 @@ function ProcessTCards(Attachments, MsgDate, From, processDB) {
     var attachment = Attachments[k]; var xlsFile = attachment.getName(); if (!IsXLS(xlsFile)) continue;
     if (xlsFile.indexOf(GetParam('DBName_Keyword')) != -1) return (ProcessDB(attachment.copyBlob(),xlsFile)); else break;
   }
-  //nain loop
+  //main loop
   var Rs = initReports(); if (Rs.fatalError) return (Rs.log);
   for (k; k < Attachments.length; k++) {
     var attachment = Attachments[k];
@@ -19,24 +19,36 @@ function ProcessTCards(Attachments, MsgDate, From, processDB) {
     processAttachment (fileDataResponse.id,Rs,xlsFile);
   }
   //count warnings
-  var ErrNum=0;
+  var ErrNum=0, Errors ='';
   for (var er in Rs.log) if (Rs.log[er].indexOf('WARNING')>=0) ErrNum++;
+  //finalize
+  (ErrNum > 1) ? Errors = ' with ' + Number(ErrNum) + ' warnings.': (ErrNum == 1) ? Errors = ' with ' + Number(ErrNum) + ' warning.': Errors='';
+  var subj = 'Processing of TimeCards submitted on ' + MsgDate.toString().split(' G')[0] + ' has been completed' + Errors;
+  var HTMLBody = subj + '<p>Processing log:<br>' + Rs.log.join('<br>') + '<p>Please find document(s) in the following folder(s):<br>';
+  for (var i in Rs.targetFolderNames) { HTMLBody = HTMLBody + '<a href="' + Rs.targetFolderUrls[i] + '" target="_blank">' + Rs.targetFolderNames[i] + '<br>'; }
+  HTMLBody = HTMLBody + '<br> Created TimeCard files:<br>';
+  for (var i in Rs.timesheetNames) HTMLBody = HTMLBody + '<a href="' + Rs.timesheetUrls[i] + '" target="_blank">' + Rs.timesheetNames[i] + '<br>';
+  HTMLBody = HTMLBody + '</a></p><p>&nbsp;</p><p>Regards,<br />ATHENA Timecard Processor v.12 (Remix)</p><p>&nbsp;</p>';
+  
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: From, subject: subj, htmlBody: HTMLBody });
+  
+  return Rs.log;
+  
 }
 function processAttachment (fileID,Rs,xlsFile){
-  //dependencies
+  /*/dependencies
   fileID = '19Xk1237uM3TAZFIXu0aWKc4En5uM7Oqx4h5Y8-NBnnk'; xlsFile = 'Some file name';
   init(); Rs = initReports(); 
-  //
-  var report = initreport (); //report==attachment
+  /*/
+  var report = initreport (); //report===attachment
   report.ss = SpreadsheetApp.openById(fileID); //converted xls file
   report.shts = report.ss.getSheets();
   if (report.shts[0].getName() != 'Sheet1') { Rs.log.push('WARNING! File ' + xlsFile + ' does not contain Title page ("Sheet1"). Skipping...'); return; }
   if (!getTimePeriod(report,Rs,xlsFile)) return;
   report.TargetFolderName = report.TimePeriod; //reserved if other name needed
   
-  //collecting TS data. out: report with Client data and TS collection as report.timesheets
+  //collecting TS data. output: report with Client data and TS collection as report.timesheets
   for (var s = 1; s < report.shts.length; s++) {
-    //    var sh = report.shts[s];
     var timecard = initTCard(report.shts[s]);//tcard == a timecard, based ot tsMap
     timecard = getTsMap(timecard);
     if (!timecard.EmplName ||!timecard.EmplID) {Rs.log.push('WARNING: No data found on "Sheet' + Number(s) + '", skipping...');continue;}
@@ -57,7 +69,7 @@ function processAttachment (fileID,Rs,xlsFile){
   //name cards and file
   for (var s in report.timesheets){
     (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO+'_'+report.timesheets[s].EmplName.split(',')[0]) 
-    : report.ShNames.push(report.timesheets[s].EmplName+'_'+report.timesheets[s].EmplID);
+    : report.ShNames.push(report.timesheets[s].EmplName.split(',')[0]+'_'+report.timesheets[s].EmplID);
   }
   //if no DB data found:
   if (report.Client ==-1 || !report.Client) {
@@ -67,9 +79,9 @@ function processAttachment (fileID,Rs,xlsFile){
   if (report.skipFile) {Rs.log.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');return;}
   if (report.ShNames.length!=report.shts.length-1){Rs.log.push('NOTE: Report "' + report.NewTimeSheetFileName + '"has '
                                                                + Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
-  ////////////clen me////////////////////  formatTCards (report);
+formatTCards (report);
   
-  ///////////////clean me ///////////////  UpdateFile(fileID, report.NewTimeSheetFileName, report.TargetFolder.getId());
+  UpdateFile(fileID, report.NewTimeSheetFileName, report.TargetFolder.getId());
   Rs.timesheetUrls.push(report.ss.getUrl().split('/edit')[0]);
   Rs.timesheetNames.push(report.NewTimeSheetFileName);
   Rs.log.push('Processing file "' + xlsFile + '" ended ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
@@ -79,9 +91,6 @@ function processAttachment (fileID,Rs,xlsFile){
     Rs.targetFolderNames.push(report.TargetFolderName);
     Rs.targetFolderUrls.push(report.TargetFolder.getUrl());
   }
-  
-  
-  var st=1;
 }
 
 function formatTCards (report){
@@ -111,8 +120,9 @@ function formatTCards (report){
     sh.getRange(1, 1).setHorizontalAlignment("left").setVerticalAlignment("middle");
     sh.insertImage(logo, 1, 1);
     sh.setName(report.ShNames[s]);
-    (report.NameByPO) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
   }
+  (report.NameByPO) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
+  report.shts[0].hideSheet();
 }
 
 function initTCard (sh){
@@ -184,7 +194,7 @@ function initReports(){
                   timesheetNames:[],
                   //                  ErrNum: 0,
                   TotalBlobsize: 0,
-                  TO: GetParam('SendNotificationTo'), //not in use
+//                  TO: GetParam('SendNotificationTo'), //not in use
                   //                  logo : DriveApp.getFileById(GetParam('logoID')).getBlob(),
                   log:[],
                   fatalError:false
