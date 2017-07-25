@@ -2,31 +2,25 @@ function ProcessTCards(Attachments, MsgDate, From, processDB) {
   From = '';
   processDB = true;
   init();
-  //  var TO = GetParam('SendNotificationTo');
-  //  return;
-  //check if attachment is isolved DB:
+  //check if attachment is isolved DB and process:
   for (var k = 0; k < Attachments.length; k++) {
-    var attachment = Attachments[k];
-    var xlsFile = attachment.getName();
-    if (!IsXLS(xlsFile)) continue;
-    //    if (xlsFile.indexOf('Active_Employees_List')!=-1){
-    if (xlsFile.indexOf(GetParam('DBName_Keyword')) != -1) return (ProcessDB(attachment.copyBlob()));
-    else break;
+    var attachment = Attachments[k]; var xlsFile = attachment.getName(); if (!IsXLS(xlsFile)) continue;
+    if (xlsFile.indexOf(GetParam('DBName_Keyword')) != -1) return (ProcessDB(attachment.copyBlob(),xlsFile)); else break;
   }
-  
-//  var colwidth = [52, 45, 73, logoHxW[1] - 73]; //array oiSolvedDBf column widths; colwidth[0]=52 is width of time cells; [1] - left margine (needed for pdf export)
-  var Rs = initReports(); if (Rs.fatalError) return (Rs.Results);
+  //nain loop
+  var Rs = initReports(); if (Rs.fatalError) return (Rs.log);
   for (k; k < Attachments.length; k++) {
     var attachment = Attachments[k];
     var xlsFile = attachment.getName();
     if (!IsXLS(xlsFile)) continue;
-    if (xlsFile.indexOf("Time Card Alternative") == -1) { Rs.Results.push('WARNING! File ' + xlsFile + ' is not TimeCard. Skipping...'); Rs.ErrNum++; continue; }
+    if (xlsFile.indexOf("Time Card Alternative") == -1) { Rs.log.push('WARNING! File ' + xlsFile + ' is not Time Report. Skipping...'); continue; }
     var fileDataResponse = UploadConverted(attachment.copyBlob());
-    Rs.Results.push('Processing file "' + xlsFile + '" started ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
+    Rs.log.push('Processing file "' + xlsFile + '" started ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
     processAttachment (fileDataResponse.id,Rs,xlsFile);
   }
-  
-  //all attachments processed
+  //count warnings
+  var ErrNum=0;
+  for (var er in Rs.log) if (Rs.log[er].indexOf('WARNING')>=0) ErrNum++;
 }
 function processAttachment (fileID,Rs,xlsFile){
   //dependencies
@@ -36,19 +30,19 @@ function processAttachment (fileID,Rs,xlsFile){
   var report = initreport (); //report==attachment
   report.ss = SpreadsheetApp.openById(fileID); //converted xls file
   report.shts = report.ss.getSheets();
-  if (report.shts[0].getName() != 'Sheet1') { Rs.Results.push('WARNING! File ' + xlsFile + ' does not contain Title page ("Sheet1"). Skipping...'); Rs.ErrNum++; return; }
+  if (report.shts[0].getName() != 'Sheet1') { Rs.log.push('WARNING! File ' + xlsFile + ' does not contain Title page ("Sheet1"). Skipping...'); return; }
   if (!getTimePeriod(report,Rs,xlsFile)) return;
   report.TargetFolderName = report.TimePeriod; //reserved if other name needed
   
   //collecting TS data. out: report with Client data and TS collection as report.timesheets
   for (var s = 1; s < report.shts.length; s++) {
-//    var sh = report.shts[s];
+    //    var sh = report.shts[s];
     var timecard = initTCard(report.shts[s]);//tcard == a timecard, based ot tsMap
     timecard = getTsMap(timecard);
-    if (!timecard.EmplName ||!timecard.EmplID) {Rs.Results.push('WARNING: No data found on "Sheet' + Number(s) + '", skipping...');Rs.ErrNum++;continue;}
+    if (!timecard.EmplName ||!timecard.EmplID) {Rs.log.push('WARNING: No data found on "Sheet' + Number(s) + '", skipping...');continue;}
     var eid = Rs.emplids.indexOf(timecard.EmplID);
     if (eid!=-1) {report = getDBdata(eid,report,Rs);timecard.PO = report.currentPO;} else timecard.NotInDB=true;
-//    timecard.PO = report.currentPO;
+    //    timecard.PO = report.currentPO;
     report.timesheets.push(timecard);
     if (report.Client && !report.TargetFolder) {
       report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
@@ -59,7 +53,7 @@ function processAttachment (fileID,Rs,xlsFile){
     }
   }
   //if no timecard(s) found
-  if (report.timesheets.length==0){Rs.Results.push('WARNING: File "' + xlsFile + '"contains no TimeCards, skipping...');Rs.ErrNum++;return;}
+  if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '"contains no TimeCards, skipping...');return;}
   //name cards and file
   for (var s in report.timesheets){
     (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO+'_'+report.timesheets[s].EmplName.split(',')[0]) 
@@ -69,12 +63,24 @@ function processAttachment (fileID,Rs,xlsFile){
   if (report.Client ==-1 || !report.Client) {
     report.NewTimeSheetFileName = report.ShNames[0]+' et al.';
     if (!report.TargetFolder) report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
-    report = checkOutFile(report);
+    report = checkOutFile(report);}
+  if (report.skipFile) {Rs.log.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');return;}
+  if (report.ShNames.length!=report.shts.length-1){Rs.log.push('NOTE: Report "' + report.NewTimeSheetFileName + '"has '
+                                                               + Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
+  ////////////clen me////////////////////  formatTCards (report);
+  
+  ///////////////clean me ///////////////  UpdateFile(fileID, report.NewTimeSheetFileName, report.TargetFolder.getId());
+  Rs.timesheetUrls.push(report.ss.getUrl().split('/edit')[0]);
+  Rs.timesheetNames.push(report.NewTimeSheetFileName);
+  Rs.log.push('Processing file "' + xlsFile + '" ended ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
+  Rs.log.push('Saved to ' + report.NewTimeSheetFileName);
+  Rs.log.push('Total of successfully processed Timecards: ' + Number(report.ShNames.length));
+  if (Rs.targetFolderNames.indexOf(report.TargetFolderName) == -1) {
+    Rs.targetFolderNames.push(report.TargetFolderName);
+    Rs.targetFolderUrls.push(report.TargetFolder.getUrl());
   }
-  if (report.skipFile) {Rs.Results.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');Rs.ErrNum++;return;}
-  if (report.ShNames.length!=report.shts.length-1){Rs.Results.push('NOTE: Report "' + report.NewTimeSheetFileName + '"has '+ Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
-  formatTCards (report);
-  (report.NameByPO) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
+  
+  
   var st=1;
 }
 
@@ -86,7 +92,6 @@ function formatTCards (report){
     var ts = report.timesheets[s];
     var sh = ts.sheet;
     var timecard = report.timesheets[s].data;
-    
     ts.Datarange.setWrap(false);
     for (var c = ts.start_C + 2; c <= ts.TotalHours_C; c++) sh.setColumnWidth(c, PunchColWidth);
     sh.getRange(ts.Dept_R + 1, 1, ts.EmplSignature_R - ts.Dept_R - 1, timecard[0].length).setWrap(true); //wrap Punches
@@ -106,6 +111,7 @@ function formatTCards (report){
     sh.getRange(1, 1).setHorizontalAlignment("left").setVerticalAlignment("middle");
     sh.insertImage(logo, 1, 1);
     sh.setName(report.ShNames[s]);
+    (report.NameByPO) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
   }
 }
 
@@ -175,11 +181,12 @@ function initReports(){
                   targetFolderUrls:[],
                   targetFolderNames:[],
                   timesheetUrls:[],
-                  ErrNum: 0,
+                  timesheetNames:[],
+                  //                  ErrNum: 0,
                   TotalBlobsize: 0,
                   TO: GetParam('SendNotificationTo'), //not in use
-//                  logo : DriveApp.getFileById(GetParam('logoID')).getBlob(),
-                  Results:[],
+                  //                  logo : DriveApp.getFileById(GetParam('logoID')).getBlob(),
+                  log:[],
                   fatalError:false
                  };
   var hdr = -1;
@@ -201,7 +208,7 @@ function initReports(){
   return Reports
 }
 
-function ProcessDB(BLOB){
+function ProcessDB(BLOB,xlsFile){
   var fileDataResponse = UploadConverted(attachment.copyBlob());
   UpdateFile(GetParam('iSolvedDB_ID'), GetParam('iSolvedDBName'), GetParam('ArchiveFolder_ID')); //archive old DB
   UpdateFile(fileDataResponse.id, xlsFile, GetParam('TemplatesFolder_ID')); //move new DB to Templates folder
@@ -216,7 +223,7 @@ function ProcessDB(BLOB){
 function getTimePeriod (report,Rs,xlsFile){
   var tcard = report.shts[0].getDataRange().getValues().join('^');
   var dr = tcard.match(/\d{1,2}\/\d{1,2}\/\d{2,4}(.+)\d{1,2}\/\d{1,2}\/\d{2,4}/);
-  if (!dr) {Rs.Results.push('WARNING! File ' + xlsFile + ' does not contain properly formatted Time Period. Skipping...'); report.fatalError=true; return false; }
+  if (!dr) {Rs.log.push('WARNING! File ' + xlsFile + ' does not contain properly formatted Time Period. Skipping...'); report.fatalError=true; return false; }
   report.TimePeriod = formatTimePeriod(dr[0]);
   return true;
 }
@@ -227,7 +234,7 @@ function getDBdata(eid,report,Rs){
   report.LocTitle = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Location Title')];
   report.LocCode = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Location Code')];
   report.currentPO = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('PO#')];
-  if ( report.Client=='Mo Co DHHS') report.NameByPO=true;
+  if ( report.Client=='Mo Co DHHS') report.NameByPO=true; //add array based exception list
   return report
 }
 
