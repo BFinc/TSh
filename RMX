@@ -76,7 +76,7 @@ function processAttachment (fileID,Rs,xlsFile){
     report.NewTimeSheetFileName = report.ShNames[0]+' et al.';
     if (!report.TargetFolder) report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
     report = checkOutFile(report);}
-  if (report.skipFile) {Rs.log.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');return;}
+  if (report.skipFile) {Rs.log.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');DriveApp.getFileById(fileID).setTrashed(true); return;}
   if (report.ShNames.length!=report.shts.length-1){Rs.log.push('NOTE: Report "' + report.NewTimeSheetFileName + '"has '
                                                                + Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
 formatTCards (report);
