@@ -1,0 +1,161 @@
+var setups = [];//SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
+var prm = [];
+//for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+
+function init(){
+  setups = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
+  for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+}
+
+function GetParam (param){
+//if (!prm.length) for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+  return setups[prm.indexOf(param)][1]
+}
+
+function sortSpreadsheet (ss,NameArray) {
+  NameArray.sort();
+  for (var j = 0; j < NameArray.length; j++) {
+    var as = ss.getSheetByName(NameArray[j]);
+    ss.setActiveSheet(as);
+    ss.moveActiveSheet(j + 2);
+  }
+  
+}
+
+function UpdateFile (fileid,fname,folderID) {
+  var payloadData = {
+    title: fname,
+    parents: []
+  };
+  payloadData.parents.push({ id: folderID });
+  var updateParams = {
+    method: 'put',
+    headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
+    contentType: 'application/json',
+    payload: JSON.stringify(payloadData)
+  };
+  //            POST https://www.googleapis.com/drive/v2/files
+  UrlFetchApp.fetch('https://www.googleapis.com/drive/v2/files/' + fileid, updateParams);
+}
+
+function UploadConverted (attachmentBlob) {
+  var uploadParams = {
+    method: 'post',
+    contentType: 'application/vnd.ms-excel', // works for both .xls and .xlsx files
+    contentLength: attachmentBlob.getBytes().length,
+    headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: attachmentBlob.getBytes(),
+//    title: 'Cucaracha' does not work
+  }
+  var uploadResponse = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v2/files/?uploadType=media&convert=true', uploadParams); // Upload file to Drive root folder and convert to Sheets
+  var fileDataResponse = JSON.parse(uploadResponse.getContentText()); // Parse upload&convert response data (need this to be able to get id of converted sheet)
+  return fileDataResponse;
+  
+}
+
+
+function sortSheets(SNames,SpreadSheet){
+  if (SNames.length==0 || SNames=='' ){
+    var SNames = []; var sheets = SpreadSheet.getSheets();
+    for (var i = 0; i < sheets.length; i++) SNames.push(sheets[i].getName());
+  }
+  SNames.sort();
+  for (var j = 0; j < SNames.length; j++) var as = SpreadSheet.getSheetByName(SNames[j]);SpreadSheet.setActiveSheet(as);SpreadSheet.moveActiveSheet(j + 1);
+}
+
+
+function formatTimePeriod (TimePeriod){
+//TimePeriod = '5/1/2017 - 2/15/2017 - 1/1/18';
+  var tmp = TimePeriod.split('-');
+  var dates = []
+  for (var i = 0; i < tmp.length; i++) dates.push(tmp[i].split('/'));
+  for (var j = 0; j < dates.length; j++) {
+    for (var i = 0; i < dates[j].length; i++) {
+      if (dates[j][i] < 10) dates[j][i] = '0' + Number(dates[j][i]);
+      if (dates[j][i] > 2000) dates[j][i] = Number(dates[j][i]) - 2000;
+    }
+  }
+  TimePeriod = dates[0].join('-');
+  for (var j = 1; j < dates.length; j++) TimePeriod = TimePeriod + ' to ' + dates[j].join('-');
+  return TimePeriod;
+}
+
+function updateiSolvedDB(setups,prm,fileDataResponse) {
+  var payloadData = { // Create payload (body) data for updating converted file's name and parent folder(s)
+    //        title: xlsFile,
+    parents: []
+  };
+  payloadData.parents.push({ id: setups[prm.indexOf('Archive folder ID')][1] });//Templates folder
+  var updateParams = {
+    method: 'put',
+    headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
+    contentType: 'application/json',
+    payload: JSON.stringify(payloadData)
+  };
+  UrlFetchApp.fetch('https://www.googleapis.com/drive/v2/files/' + setups[prm.indexOf('iSolvedDB_ID')][1], updateParams); // Update metadata (filename and parent folder(s)) of converted sheet
+  var payloadData = { // Create payload (body) data for updating converted file's name and parent folder(s)
+    title: xlsFile,
+    parents: []
+  };
+  payloadData.parents.push({ id: setups[prm.indexOf('Templates folder ID')][1] });//Templates folder
+  // Parameters for Drive API File Update request (see https://developers.google.com/drive/v2/reference/files/update)
+  var updateParams = {
+    method: 'put',
+    headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
+    contentType: 'application/json',
+    payload: JSON.stringify(payloadData)
+  };
+  UrlFetchApp.fetch('https://www.googleapis.com/drive/v2/files/' + fileDataResponse.id, updateParams); // Update metadata (filename and parent folder(s)) of converted sheet
+  ///put name (xlsFile) and id (fileDataResponse.id) of new iSolved DB onto setup page of GMailAutomation 
+  setups[prm.indexOf('iSolvedDBName')][1]=xlsFile;
+  setups[prm.indexOf('iSolvedDB_ID')][1]=fileDataResponse.id;
+  SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups);
+  var msg = 'iSolved database has been updated with file'+DBName+' ('+SpreadsheetApp.openById(setups[prm.indexOf('iSolvedDB_ID')][1]).getUrl()+')'
+  MailApp.sendEmail({ to: TO, cc: From, subject: 'iSolved database has been successfully updated', htmlBody: msg });
+  return(msg);
+}
+
+
+
+
+
+
+
+
+function GetIndex(what,where,how){
+  if(what == "") return false; 
+  if(how=='') how=0;
+//  var l=where.length;
+  for (var r=0; r<where.length; r++)
+//  l=where[r];
+    if (where[r] == what) return r+how;
+  return -1   
+}
+
+function GetFolderByName(ParentFolder,ChildFolderName) {
+  var folder;
+  var fi = ParentFolder.getFoldersByName(ChildFolderName);
+  if (fi.hasNext()) {
+    folder = fi.next();
+  } else {
+    folder = ParentFolder.createFolder(ChildFolderName);
+  }
+  return folder;
+}
+
+function NameOK (Name){
+
+}
+
+function IsXLS(fileName) {
+  //  var fileName = attachment.getName();
+  var temp = fileName.split('.');
+  var fileExtension = temp[temp.length - 1].toLowerCase();
+  if (fileExtension=='xls'||fileExtension=='xlsx') return true;
+  else return false;
+}
+
+function AddWarning(){
+
+}
+
