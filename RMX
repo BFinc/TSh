@@ -1,0 +1,249 @@
+function ProcessTCards(Attachments, MsgDate, From, processDB) {
+  From = '';
+  processDB = true;
+  init();
+  //  var TO = GetParam('SendNotificationTo');
+  //  return;
+  //check if attachment is isolved DB:
+  for (var k = 0; k < Attachments.length; k++) {
+    var attachment = Attachments[k];
+    var xlsFile = attachment.getName();
+    if (!IsXLS(xlsFile)) continue;
+    //    if (xlsFile.indexOf('Active_Employees_List')!=-1){
+    if (xlsFile.indexOf(GetParam('DBName_Keyword')) != -1) return (ProcessDB(attachment.copyBlob()));
+    else break;
+  }
+  
+//  var colwidth = [52, 45, 73, logoHxW[1] - 73]; //array oiSolvedDBf column widths; colwidth[0]=52 is width of time cells; [1] - left margine (needed for pdf export)
+  var Rs = initReports(); if (Rs.fatalError) return (Rs.Results);
+  for (k; k < Attachments.length; k++) {
+    var attachment = Attachments[k];
+    var xlsFile = attachment.getName();
+    if (!IsXLS(xlsFile)) continue;
+    if (xlsFile.indexOf("Time Card Alternative") == -1) { Rs.Results.push('WARNING! File ' + xlsFile + ' is not TimeCard. Skipping...'); Rs.ErrNum++; continue; }
+    var fileDataResponse = UploadConverted(attachment.copyBlob());
+    Rs.Results.push('Processing file "' + xlsFile + '" started ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
+    processAttachment (fileDataResponse.id,Rs,xlsFile);
+  }
+  
+  //all attachments processed
+}
+function processAttachment (fileID,Rs,xlsFile){
+  //dependencies
+  fileID = '19Xk1237uM3TAZFIXu0aWKc4En5uM7Oqx4h5Y8-NBnnk'; xlsFile = 'Some file name';
+  init(); Rs = initReports(); 
+  //
+  var report = initreport (); //report==attachment
+  report.ss = SpreadsheetApp.openById(fileID); //converted xls file
+  report.shts = report.ss.getSheets();
+  if (report.shts[0].getName() != 'Sheet1') { Rs.Results.push('WARNING! File ' + xlsFile + ' does not contain Title page ("Sheet1"). Skipping...'); Rs.ErrNum++; return; }
+  if (!getTimePeriod(report,Rs,xlsFile)) return;
+  report.TargetFolderName = report.TimePeriod; //reserved if other name needed
+  
+  //collecting TS data. out: report with Client data and TS collection as report.timesheets
+  for (var s = 1; s < report.shts.length; s++) {
+//    var sh = report.shts[s];
+    var timecard = initTCard(report.shts[s]);//tcard == a timecard, based ot tsMap
+    timecard = getTsMap(timecard);
+    if (!timecard.EmplName ||!timecard.EmplID) {Rs.Results.push('WARNING: No data found on "Sheet' + Number(s) + '", skipping...');Rs.ErrNum++;continue;}
+    var eid = Rs.emplids.indexOf(timecard.EmplID);
+    if (eid!=-1) {report = getDBdata(eid,report,Rs);timecard.PO = report.currentPO;} else timecard.NotInDB=true;
+//    timecard.PO = report.currentPO;
+    report.timesheets.push(timecard);
+    if (report.Client && !report.TargetFolder) {
+      report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
+      report.NewTimeSheetFileName = report.Client
+      +'_'+report.LocCode+'_'+report.LocTitle+'_'+report.TimePeriod;
+      report = checkOutFile(report);
+      if (report.skipFile) break;
+    }
+  }
+  //if no timecard(s) found
+  if (report.timesheets.length==0){Rs.Results.push('WARNING: File "' + xlsFile + '"contains no TimeCards, skipping...');Rs.ErrNum++;return;}
+  //name cards and file
+  for (var s in report.timesheets){
+    (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO) : report.ShNames.push(report.timesheets[s].EmplName+'_'+report.timesheets[s].EmplID);
+  }
+  //if no DB data found:
+  if (report.Client ==-1 || !report.Client) {
+    report.NewTimeSheetFileName = report.ShNames[0]+' et al.';
+    if (!report.TargetFolder) report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
+    report = checkOutFile(report);
+  }
+  if (report.skipFile) {Rs.Results.push('WARNING: File "' + report.NewTimeSheetFileName + '" already exists, skipping...');Rs.ErrNum++;return;}
+  if (report.ShNames.length!=report.shts.length-1){Rs.Results.push('NOTE: Report "' + report.NewTimeSheetFileName + '"has '+ Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
+  formatTCards (report);
+  var st=1;
+}
+
+function formatTCards (report){
+  var logoHxW = GetParam('logoHxW').replace(/ /g,'').replace(/;/g,',').split(',');
+  var PunchColWidth = GetParam('PunchColWidth');
+  var logo = DriveApp.getFileById(GetParam('logoID')).getBlob()
+  for (var s in report.timesheets){
+    var ts = report.timesheets[s];
+    var sh = ts.sheet;
+    var timecard = report.timesheets[s].data;
+    
+    ts.Datarange.setWrap(false);
+    for (var c = ts.start_C + 2; c <= ts.TotalHours_C; c++) sh.setColumnWidth(c, PunchColWidth);
+    sh.getRange(ts.Dept_R + 1, 1, ts.EmplSignature_R - ts.Dept_R - 1, timecard[0].length).setWrap(true); //wrap Punches
+    if (ts.start_R == -1) {} // process error bad format of TS : no name row found
+    if (ts.start_R == 1) sh.insertRowBefore(1); //{sh.insertRowBefore(1);timecard.unshift();getTsMap (timecard);}
+    if (ts.start_R > 2) sh.deleteRows(1, ts.start_R - 2);
+    var cardwdth = ts.TotalHours_C - ts.start_C+1;
+    sh.getRange(1, 1, 1, timecard[0].length).clear(); //clean 1st row
+    //       if (cardwdth > 10) sh.getRange(1, ts.TotalHours_C - Math.round(cardwdth / 2)).setValue('TIMECARD').setFontSize(18).setFontWeight('bold').setHorizontalAlignment("center").setVerticalAlignment("middle"); //Centering Title
+    if (cardwdth > 10) sh.getRange(1, Math.round(cardwdth / 2)).setValue('TIMECARD').setFontSize(18).setFontWeight('bold').setHorizontalAlignment("left").setVerticalAlignment("middle"); //Centering Title
+    else sh.getRange(1, ts.TotalHours_C - 5).setValue('TIMECARD').setFontSize(18).setFontWeight('bold').setHorizontalAlignment("center").setVerticalAlignment("middle");
+    sh.getRange(1, ts.TotalHours_C).setValue(report.TimePeriod).setFontSize(14).setHorizontalAlignment("right").setVerticalAlignment("bottom").setFontWeight('bold');
+    sh.hideColumns(ts.TotalHours_C + 1, timecard[0].length - ts.TotalHours_C)
+    if (ts.start_C > 1) sh.deleteColumns(1, ts.start_C - 1);
+    //             if (ts.start_C > 2) sh.deleteColumns(1, ts.start_C - 2); //reserved for left merging column if pdf centering can't be set upon export. If in use - correct col for landing logo from 1 to 2
+    sh.setRowHeight(1, Number(logoHxW[0]) + 4);
+    sh.getRange(1, 1).setHorizontalAlignment("left").setVerticalAlignment("middle");
+    sh.insertImage(logo, 1, 1);
+  }
+}
+
+function initTCard (sh){
+  var tsmap = {sheet:sh,
+               Datarange: '',
+               data:[],
+               ShName:'',
+               EmplName:'',
+               EmplID:'',
+               PO:'',
+               EmplID_R:-1,
+               Dept_R:-1,
+               start_R: -1,
+               start_C: -1,
+               Punches_R: -1,
+               TotalHours_C: -1,
+               TotalHours_R: -1,
+               PayCodes_R:-1,
+               HourlyHours_R:-1,
+               EmplSignature_R:-1,
+               SupervisorSign_R:-1,
+               NotInDB : false,
+               skip :false,
+               errors:[]
+              };
+  tsmap.Datarange = sh.getDataRange();
+  tsmap.data = tsmap.Datarange.getValues();
+  return tsmap;
+}
+
+function initreport (){
+  var report =  { ss:'',
+                 shts:[],
+                 TimePeriod:'',
+                 ShNames:[],
+                 timesheets:[], //timesheet maps and values, sheet dependent
+                 TargetFolderName:'',
+                 TargetFolder:'',
+                 NewTimeSheetFileName:'',
+                 TitleSheetFound: false,
+                 Client:'',
+                 LocCode:'',
+                 LocTitle:'',
+                 currentPO:'',
+                 NameByPO: false,
+                 skipFile : false,
+                 fatalError:false
+                };
+  return report;
+}
+
+function checkOutFile (report){
+  if (report.TargetFolder.getFilesByName(report.NewTimeSheetFileName).hasNext()) {
+    (GetParam('DiscardUpdates')) ? report.skipFile = true : report.NewTimeSheetFileName = report.NewTimeSheetFileName  + Utilities.formatDate(new Date(), 'America/New_York', "' (Update' MM-dd-yy':'HH:mm)");
+  }
+  return report
+}
+
+function initReports(){
+  //  init();
+  var Reports =  {TSFolder : DriveApp.getFolderById(GetParam('TimeSheetsFolder_ID')),
+                  iSolvedDB : SpreadsheetApp.openById(GetParam('iSolvedDB_ID')).getSheets()[0].getDataRange().getValues(),
+                  DBName : GetParam('iSolvedDBName'),//?
+                  dbheader:'',
+                  emplids:[],
+                  targetFolderUrls:[],
+                  targetFolderNames:[],
+                  timesheetUrls:[],
+                  ErrNum: 0,
+                  TotalBlobsize: 0,
+                  TO: GetParam('SendNotificationTo'), //not in use
+//                  logo : DriveApp.getFileById(GetParam('logoID')).getBlob(),
+                  Results:[],
+                  fatalError:false
+                 };
+  var hdr = -1;
+  for (var i = 0; i < Reports.iSolvedDB.length; i++)
+    if (Reports.iSolvedDB[i][0] == "Employee Name") { hdr = i; break; }
+  if (hdr == -1) {
+    var msg = 'WARNING! Fatal Error: Bad format of iSolved database ' + Reports.DBName + ' (' + SpreadsheetApp.openById(setups[prm.indexOf('iSolvedDB_ID')][1]).getUrl() + '). Processing aborted. Please update iSolved Database';
+    Reports.fatalError=true;
+    Reports.Results.push(msg);
+    MailApp.sendEmail({ to: Reports.TO, cc: '', subject: 'Bad format of iSolved database ' + Reports.DBName, htmlBody: msg });
+    return (Reports);
+  }
+  var dbheader = Reports.iSolvedDB[hdr];
+  for (var i = 0; i < dbheader.length; i++)
+    if (Reports.iSolvedDB[hdr - 1][i] != '') dbheader[i] = Reports.iSolvedDB[hdr - 1][i] + ' ' + dbheader[i]; //else header[i] = header[i].replace('#','')
+  Reports.dbheader = dbheader;
+  var idcol = dbheader.indexOf('Employee Number');
+  for (var i = 0; i < Reports.iSolvedDB.length; i++) Reports.emplids.push(Reports.iSolvedDB[i][idcol]);
+  return Reports
+}
+
+function ProcessDB(BLOB){
+  var fileDataResponse = UploadConverted(attachment.copyBlob());
+  UpdateFile(GetParam('iSolvedDB_ID'), GetParam('iSolvedDBName'), GetParam('ArchiveFolder_ID')); //archive old DB
+  UpdateFile(fileDataResponse.id, xlsFile, GetParam('TemplatesFolder_ID')); //move new DB to Templates folder
+  ///update setup sheet 
+  setups[prm.indexOf('iSolvedDBName')][1] = xlsFile;
+  setups[prm.indexOf('iSolvedDB_ID')][1] = fileDataResponse.id;
+  SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups); //update setup page
+  var msg = 'iSolved database has been updated with file ' + xlsFile + ' (' + SpreadsheetApp.openById(GetParam('iSolvedDB_ID')).getUrl() + ')';
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: From, subject: 'iSolved database has been successfully updated', htmlBody: msg });
+  return (msg);
+}
+function getTimePeriod (report,Rs,xlsFile){
+  var tcard = report.shts[0].getDataRange().getValues().join('^');
+  var dr = tcard.match(/\d{1,2}\/\d{1,2}\/\d{2,4}(.+)\d{1,2}\/\d{1,2}\/\d{2,4}/);
+  if (!dr) {Rs.Results.push('WARNING! File ' + xlsFile + ' does not contain properly formatted Time Period. Skipping...'); report.fatalError=true; return false; }
+  report.TimePeriod = formatTimePeriod(dr[0]);
+  return true;
+}
+
+function getDBdata(eid,report,Rs){
+  //var eid = Rs.emplids.indexOf(Timecard.EmplID);
+  report.Client = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Client Title')];
+  report.LocTitle = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Location Title')];
+  report.LocCode = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Location Code')];
+  report.currentPO = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('PO#')];
+  if ( report.Client=='Mo Co DHHS') report.NameByPO=true;
+  return report
+}
+
+function getTsMap (Timecard){
+  var timecard =Timecard.data;
+  for (var i = 0; i < timecard.length; i++){
+    var r = timecard[i];
+    if (timecard[i].indexOf('Name:')>=0) {var ni=timecard[i].indexOf('Name:'); Timecard.start_R=i+1; Timecard.start_C=ni+1;Timecard.EmplName=timecard[i][ni+1];}
+    if (timecard[i].indexOf('Employee Id:')>=0) {var ni=timecard[i].indexOf('Employee Id:'); Timecard.EmplID_R=i+1;Timecard.EmplID=timecard[i][ni+1];}
+    if (timecard[i].indexOf('Department:')>=0)  {var ni=timecard[i].indexOf('Department:'); Timecard.Dept_R=i+1; Timecard.Dept=timecard[i][ni+1];}
+    if (timecard[i].indexOf('Total Hours')>=0&&Timecard.TotalHours_C==-1) {Timecard.TotalHours_C=timecard[i].indexOf('Total Hours')+1;}
+    if (timecard[i].indexOf('Punches')>=0) {Timecard.Punches_R=i+1;}
+    if (timecard[i].indexOf('Total Hours')>=0) {Timecard.TotalHours_R=i+1;}
+    if (timecard[i].indexOf('Pay Codes')>=0) {Timecard.PayCodes_R=i+1;}
+    if (timecard[i].indexOf('Hourly Regular')>=0) {Timecard.HourlyHours_R=i+1;}
+    if (timecard[i].indexOf('Employee')>=0 || timecard[i].indexOf('Employee Signature:')>=0) {Timecard.EmplSignature_R=i+1;}
+    if (timecard[i].indexOf('Supervisor Signature:')>=0 || timecard[i].indexOf('Supervisor')>=0) {Timecard.SupervisorSign_R=i+1;}
+  }
+  return Timecard;
+}
+
+
