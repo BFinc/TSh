@@ -1,4 +1,5 @@
 function ProcessTCards(Attachments, MsgDate, From, processDB) {
+  //TODO: templated file naming
   From = '';
   processDB = true;
   init();
@@ -58,14 +59,14 @@ function processAttachment (fileID,Rs,xlsFile){
     report.timesheets.push(timecard);
     if (report.Client && !report.TargetFolder) {
       report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
-      report.NewTimeSheetFileName = report.Client
+      report.NewTimeSheetFileName = report.Client   //to future modification: report.NewTimeSheetFileName = nameFile(Rs.iSolvedDB[eid],Rs.dbheader)
       +'_'+report.LocCode+'_'+report.LocTitle+'_'+report.TimePeriod;
       report = checkOutFile(report);
       if (report.skipFile) break;
     }
   }
   //if no timecard(s) found
-  if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '"contains no TimeCards, skipping...');return;}
+  if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '"contains no TimeCards, skipping...');DriveApp.getFileById(fileID).setTrashed(true);return;}
   //name cards and file
   for (var s in report.timesheets){
     (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO+'_'+report.timesheets[s].EmplName.split(',')[0]) 
@@ -153,6 +154,11 @@ function initTCard (sh){
   return tsmap;
 }
 
+function nameFile(dbrec,hdr){
+var template = GetParam('FileName');
+//dbrec is db line with all data
+}
+
 function initreport (){
   var report =  { ss:'',
                  shts:[],
@@ -219,7 +225,7 @@ function initReports(){
 }
 
 function ProcessDB(BLOB,xlsFile){
-  var fileDataResponse = UploadConverted(attachment.copyBlob());
+  var fileDataResponse = UploadConverted(BLOB);
   UpdateFile(GetParam('iSolvedDB_ID'), GetParam('iSolvedDBName'), GetParam('ArchiveFolder_ID')); //archive old DB
   UpdateFile(fileDataResponse.id, xlsFile, GetParam('TemplatesFolder_ID')); //move new DB to Templates folder
   ///update setup sheet 
@@ -227,7 +233,7 @@ function ProcessDB(BLOB,xlsFile){
   setups[prm.indexOf('iSolvedDB_ID')][1] = fileDataResponse.id;
   SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups); //update setup page
   var msg = 'iSolved database has been updated with file ' + xlsFile + ' (' + SpreadsheetApp.openById(GetParam('iSolvedDB_ID')).getUrl() + ')';
-  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: From, subject: 'iSolved database has been successfully updated', htmlBody: msg });
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: 'iSolved database has been successfully updated', htmlBody: msg });
   return (msg);
 }
 function getTimePeriod (report,Rs,xlsFile){
