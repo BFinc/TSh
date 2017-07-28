@@ -25,7 +25,7 @@ function ProcessTCards(Attachments, MsgDate, From, processDB) {
   //finalize
   (ErrNum > 1) ? Errors = ' with ' + Number(ErrNum) + ' warnings.': (ErrNum == 1) ? Errors = ' with ' + Number(ErrNum) + ' warning.': Errors='';
   var subj = 'Processing of TimeCards submitted on ' + MsgDate.toString().split(' G')[0] + ' has been completed' + Errors;
-  var HTMLBody = subj + '<p>Processing log:<br>' + Rs.log.join('<br>') + '<p>Please find document(s) in the following folder(s):<br>';
+  var HTMLBody = subj + '<br> iSolved database in use: '+Rs.DBName+'<p>Processing log:<br>' + Rs.log.join('<br>') + '<p>Please find document(s) in the following folder(s):<br>';
   for (var i in Rs.targetFolderNames) { HTMLBody = HTMLBody + '<a href="' + Rs.targetFolderUrls[i] + '" target="_blank">' + Rs.targetFolderNames[i] + '<br>'; }
   HTMLBody = HTMLBody + '<br> Created TimeCard files:<br>';
   for (var i in Rs.timesheetNames) HTMLBody = HTMLBody + '<a href="' + Rs.timesheetUrls[i] + '" target="_blank">' + Rs.timesheetNames[i] + '<br>';
@@ -54,7 +54,7 @@ function processAttachment (fileID,Rs,xlsFile){
     timecard = getTsMap(timecard);
     if (!timecard.EmplName ||!timecard.EmplID) {Rs.log.push('WARNING: No data found on "Sheet' + Number(s) + '", skipping...');continue;}
     var eid = Rs.emplids.indexOf(timecard.EmplID);
-    if (eid!=-1) {report = getDBdata(eid,report,Rs);timecard.PO = report.currentPO;} else timecard.NotInDB=true;
+    if (eid!=-1) {report = getDBdata(eid,report,Rs);timecard.PO = report.currentPO;} else {timecard.NotInDB=true;Rs.log.push('WARNING: No iSolved data found for employee #' + timecard.EmplID);}
     //    timecard.PO = report.currentPO;
     report.timesheets.push(timecard);
     if (report.Client && !report.TargetFolder) {
@@ -122,7 +122,7 @@ function formatTCards (report){
     sh.insertImage(logo, 1, 1);
     sh.setName(report.ShNames[s]);
   }
-  (report.NameByPO) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
+  (report.NameByPO && report.ShNames.length >0) ? sortSpreadsheet(report.ss,report.ShNames)  : report=report;
   report.shts[0].hideSheet();
 }
 
