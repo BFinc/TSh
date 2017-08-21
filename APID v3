@@ -1,0 +1,180 @@
+function CheckReportFilesAPI_3() {
+  //  var ft = [MimeType.GOOGLE_DOCS,MimeType.MICROSOFT_EXCEL,MimeType.MICROSOFT_EXCEL_LEGACY];
+  var Timer=[0, Number(new Date())];
+  //  var KW.DB = GetParam("DBName_Keyword");
+//  var KW = {DB:'SZ-Active_Employees_List',DBPending:'{{DBPending}}:',Reports:'Time Card Alternative'};//setting to lateral improves scanning performance by ommitting GetParam call that requires getting data from setup sheet
+  var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//GetParam("DumpsterFolder_ID");
+  var DumpsterName = 'TimeSheets';//GetParam("DumpsterFolderName");
+  var ftype = {//Excel:' mimeType contains "application/wps-office.xls" ',
+    Excel:' (mimeType contains "application/wps-office.xls" or mimeType = "application/vnd.ms-excel") ',
+    AnySheets: ' (mimeType contains "application/wps-office.xls" or mimeType = "application/vnd.ms-excel" or mimeType = "application/vnd.google-apps.spreadsheet") ',
+    GSheet:' mimeType = "application/vnd.google-apps.spreadsheet" ',
+    GDoc: ' mimeType = "application/vnd.google-apps.document" ',
+    Gfolder:' mimeType = "application/vnd.google-apps.folder" ',
+    PDF: ' mimeType = "application/pdf" '
+  };
+  //main loop
+  var TimeOut = 300; //time (sec) when process should go to completion to avoid trigger excess time limit
+  var Reports = [];
+  var Excel, Rs;
+//  var Files =[];
+  //KW structure: Keyword, count, [file id's], [file names], [Mime types]
+//  var KW = {DB:['SZ-Active_Employees_List',0,[],[],[]],DBPending:['{{DBPending}}:',0,[],[],[]],Reports:['Time Card Alternative',0,[],[],[]]};//setting to lateral improves scanning performance by ommitting GetParam call that requires getting data from setup sheet
+  //KW structure: Keyword, count, [file]
+   var KW = {DB:['SZ-Active_Employees_List',[]],DBPending:['{{DBPending}}:',[]],Reports:['Time Card Alternative',[]]};//setting to lateral improves scanning performance by ommitting GetParam call that requires getting data from setup sheet
+ //regular scan
+  var query = jet('"%s" in parents and trashed = false and %s and (title contains "%s" or title contains "%s" or title contains "%s")',[DumpsterID,ftype.AnySheets,KW.DB[0],KW.DBPending[0],KW.Reports[0]]);
+  var files = Drive.Files.list({maxResults: 100,q: query}); 
+  if (files.items.length==0)  return;
+  for (var i = 0; i < files.items.length; i++) {
+    for (var k in KW) if (files.items[i].title.indexOf(KW[k][0]) >=0) KW[k][1].push(files.items[i]);
+  }
+  if (KW.DB[1].length >1) return;//process error "More than 1 DB file to update or select the oldest and process
+  if (KW.DB[1].length ==1) {Excel = checkupExcel(KW.DB[1][0].mimeType,KW.DB[1][0].id,Timer); 
+                    if (Excel[0]) {updateDB(Excel[1],KW.DB[1][0].title); Excel[2].setName('{{Processed}}'+KW.DB[1][0].title)} else {updateDB(KW.DB[1][0].id,KW.DB[1][0].title)} 
+                    return
+                   }; 
+ //return;
+
+    if (KW.DBPending[1].length >0)  Reports.push(GetReports(KW.DBPending[1],Timer,TimeOut));
+    if (KW.Reports[1].length >0)  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
+ if(Reports.length>0) finalize(Reports,Timer);
+  Logger.log('DONE at: '+timeOut(Timer));//,file.mimeType, file.id);
+}
+
+function GetReports (files,Timer,TimeOut){
+  //alternative : DriveApp.getFoldersByName(name).next() .searchFiles(query); .searchFolders(query),  (for example "title contains 'Gulliver\\'s Travels'" or 'title contains "Gulliver\'s Travels"').
+  if (files.length > 0) {
+    Logger.log('%s files found on %s',files.length, timeOut(Timer));
+    var Rs = initReports(); if (Rs.fatalError) return Rs;//(Rs.log);
+    Logger.log('Init report done, fatalError: %s, timer: %s',Rs.fatalError, timeOut(Timer));
+    for (var i = 0; i < files.length; i++) {
+      if (timeOut(Timer)>TimeOut) {Logger.log('Time Out @ filing loop: '+timeOut(Timer)); break}
+      var fileid = files[i].id, xlsFile = files[i].title, FILE;  // not good as has no getBlob Drive.Files.get(fileid);
+      var isExcel = checkupExcel(files[i].mimeType,fileid,Timer);
+      if (isExcel[0]) {FILE=isExcel[2];fileid=isExcel[1];}
+      var resp = processReport(fileid,Rs,xlsFile);//[{{OK}}:,{{DBPending}}:,{{BadFile}}:{{Duplicate}}, {{DB-Pending}}]
+      if (FILE && resp.indexOf(Rs.DBPending)<=0) FILE.setName(xlsFile=resp+xlsFile);
+      if (FILE && resp=='{{BadFile}}:') FILE.setTrashed(true);//Drive.Files.trash(fileid);// or DriveApp.getFileById(fileid).setTrashed(true); //this removes converted file (untitled in root)
+      Logger.log('Ended up with %s, %s: ',xlsFile, timeOut(Timer));//,file.mimeType, file.id);
+    } 
+  }   return Rs;
+}
+
+
+
+function finalize(Reports,Timer){
+  //Rs.log.push('WARNING: iSolved DB needs update! Current DB is "' + Rs.DBName ); 
+  var ErrNum=0, Errors ='';
+  var HTMLBody = '<p><strong>Job report</strong></p>';
+  if (Reports.length==0) return; 
+  Logger.log('number of records in Reports[]: '+Reports.length);
+  for  (var r in Reports){
+    Logger.log('Processing Report #'+r);
+    var Rs = Reports[r];
+      Logger.log('Number of reports in Rs: %s',Rs.reports.length);
+    for (var er in Rs.log) if (Rs.log[er].indexOf('WARNING')>=0) ErrNum++;
+    HTMLBody += Rs.pdfLinks.join('<br>');
+    HTMLBody += '<p>Processing log:<br>'+Rs.log.join('<br>')
+  } 
+  //final point
+  (ErrNum > 1) ? Errors = ' with ' + Number(ErrNum) + ' warnings.': (ErrNum == 1) ? Errors = ' with ' + Number(ErrNum) + ' warning.': Errors='';
+  //  var subj = 'Processing of TimeCards submitted on ' + MsgDate.toString().split(' G')[0] + ' has been completed' + Errors;
+  var subj = 'Processing of TimeCard Reports completed' + Errors;
+  HTMLBody += '<p>Total processing time '+timeOut(Timer)+'</p><p>Regards,<br />ATHENA Timecard Processor '+GetParam('Version')+'</p><p>&nbsp;</p>';
+  Logger.log(subj);
+  Logger.log(HTMLBody);
+  Logger.log('Total time '+timeOut(Timer));
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
+  return Rs.log;
+}
+
+
+function getReports (query,Timer,TimeOut){
+  var files, pageToken;
+  //alternative : DriveApp.getFoldersByName(name).next() .searchFiles(query); .searchFolders(query),  (for example "title contains 'Gulliver\\'s Travels'" or 'title contains "Gulliver\'s Travels"').
+  do {files = Drive.Files.list({maxResults: 100,pageToken: pageToken,q: query});//.items[0].; 
+      //  Logger.log('Got files: '+timeOut(Timer)[0]);//,file.mimeType, file.id);
+      if (timeOut(Timer)>TimeOut) {Logger.log('Time Out @ do loop: '+timeOut(Timer)); break}
+      if (files.items && files.items.length > 0) {
+        Logger.log('%s files found on %s',files.items.length, timeOut(Timer));
+        var Rs = initReports(); if (Rs.fatalError) return Rs;//(Rs.log);
+        Logger.log('Init report done, fatalError: %s, timer: %s',Rs.fatalError, timeOut(Timer));
+        for (var i = 0; i < files.items.length; i++) {
+      if (timeOut(Timer)>TimeOut) {Logger.log('Time Out @ filing loop: '+timeOut(Timer)); break}
+          var fileid = files.items[i].id, xlsFile = files.items[i].title, FILE;  // not good as has no getBlob Drive.Files.get(fileid);
+          var isExcel = checkupExcel(files.items[i].mimeType,fileid,Timer);
+          if (isExcel[0]) {FILE=isExcel[2];fileid=isExcel[1];}
+/*          Logger.log('xls file %s. MIME: %s',xlsFile,files.items[i].mimeType);
+          if (files.items[i].mimeType.indexOf('application/wps-office.xls')>=0 || files.items[i].mimeType.indexOf('application/vnd.ms-excel')>=0) {
+            Logger.log('xls file found, startung conversion, timer: %s',timeOut(Timer));
+            FILE = DriveApp.getFileById(fileid);
+            var fileid = UploadConverted(FILE.getBlob()).id;
+            Logger.log('Converted, id=%s, timer: %s',fileid,timeOut(Timer));
+            Logger.log('Checking "xlsFile.indexOf(Rs.DBPending)": %s, timer: %s',xlsFile.indexOf(Rs.DBPending)!= -1,timeOut(Timer));
+          }
+          */
+          if (xlsFile.indexOf(Rs.DBName_Keyword) >=0) {
+            Logger.log('DB update found, executing updateDB(fileid,xlsFile), timer: %s',fileid,timeOut(Timer));
+            Rs.log.push(updateDB(fileid,xlsFile)); 
+            return Rs;//ProcessDB returns HTMLBody msg
+          }
+          Logger.log('The file is not DB update, executing processReport(), timer: %s',fileid,timeOut(Timer));
+          var resp = processReport(fileid,Rs,xlsFile);//[{{OK}}:,{{DBPending}}:,{{BadFile}}:{{Duplicate}}, {{DB-Pending}}]
+          if (FILE && resp.indexOf(Rs.DBPending)<=0) FILE.setName(xlsFile=resp+xlsFile);
+          if (FILE && resp=='{{BadFile}}:') FILE.setTrashed(true);//Drive.Files.trash(fileid);// or DriveApp.getFileById(fileid).setTrashed(true); //this removes converted file (untitled in root)
+          Logger.log('Ended up with %s, %s: ',xlsFile, timeOut(Timer));//,file.mimeType, file.id);
+          //if timeout - break;
+        } 
+      } else {
+        Logger.log('No file found_____________________: '+timeOut(Timer));//,file.mimeType, file.id);
+      }
+      pageToken = files.nextPageToken;
+     } while (pageToken); //&& not timeout!!!!
+  //  if (Rs) finalize(Rs);
+ // if (Rs)  {Logger.log(Rs.log); Logger.logisEsxel('pdf Links: '+Rs.pdfLinks);}
+  //finalize (Rs);
+  return Rs;
+}
+
+function checkupExcel (ItemMimeType,fileid,Timer){
+          if (ItemMimeType.indexOf('application/wps-office.xls')>=0 || ItemMimeType.indexOf('application/vnd.ms-excel')>=0) {
+            Logger.log('xls file found, startung conversion, timer: %s',timeOut(Timer));
+            var FILE = DriveApp.getFileById(fileid);
+            fileid = UploadConverted(FILE.getBlob()).id;
+//            Logger.log('Converted, id=%s, timer: %s',fileid,timeOut(Timer));
+//            Logger.log('Checking "xlsFile.indexOf(Rs.DBPending)": %s, timer: %s',xlsFile.indexOf(Rs.DBPending)!= -1,timeOut(Timer));
+            return [true,fileid,FILE]
+          }
+return false
+}
+//Drive.Files.trash(files.items[i].id); ///////WOOOOOORKS!!!
+//Drive.Files.patch({'title': files.items[i].title +='BOO'}, files.items[i].id);//, optionalArgs)//WOOOORKS!!! but parent can't be set
+//Drive.Files.patch({'title': files.items[i].title +='GOO'}, '0B2n7QuWDntYRcWRkV2U1a285NzA', {'addParents': p});//, optionalArgs)//work - same id but added to another folder addParents	string	Comma-separated list of parent IDs to add.
+//Drive.Files.touch(fileId) Set the file's updated time to the current server time
+//Drive.Files.patch({'title': files.items[i].title +='ZOO', 'addParents': p}, files.items[i].id);//, optionalArgs)//work - same id but added to another folder
+
+//Drive.Files.export(files.items[i].id, MimeType.GOOGLE_SHEETS); does not work
+//Drive.Files.update(resource, fileId)
+//var p= "0B2n7QuWDntYRdTh5Z0lvQ1o3TW8"; //0B2n7QuWDntYRQ0gxMi1HUFBNQVU copy: 0B2n7QuWDntYRcWRkV2U1a285NzA
+//Drive.Files.patch({'title': files.items[i].title +='xOO'}, '0B2n7QuWDntYRcWRkV2U1a285NzA', {'parent': p});//, optionalArgs)//does not work
+//Drive.Files.patch({'title': files.items[i].title +='xOO', 'parent': p}, '0B2n7QuWDntYRcWRkV2U1a285NzA');//, optionalArgs)//does not work
+//      return;
+
+
+//files imported from attachment are of MymeTipe.MICROSOFT_EXCEL_LEGACY and can be processed through DriveApp
+//DBase pending: query ROOT for ': DB PENDING' in name - the same ProcessReport routine - needs testing
+//next: PDF_Pending: after initial converting/formatting upends ": PDF PENDING" to the name. Then we can query root for the files with ': PDF PENDING'
+//later: add folder PDFs to scan for pdf conversion in addition to _PDF PENDING
+
+//Gmail checker should simply save file with ori name to TS. Or it can covert and then save to ST. This would add FetchUrl whereas save - not.
+//Search for "save attachment to Drive"
+//or
+/*
+usual mail checker routines...
+var Rs = initReports(); if (Rs.fatalError) return (Rs.log);
+var fileid = UploadConverted(attachment.copyBlob()).id;
+Rs = processReport(fileid,Rs,xlsFile,DBPending);
+Email Notification...
+*/
+
