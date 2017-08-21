@@ -1,18 +1,146 @@
 var setups = [];//SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
 var prm = [];
-//for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+var errorLog ='';
+
+function getpdfHTML(report) {
+  //&emsp
+  //  var portrait = false; //report.partrait
+  //var ssid = '1RADplvGwaYcY__Kmkd62DxUkeRpycg6gRfpS0ngRQcs';//report.reportId;
+  //var sheetid='2042699284';//report.ShIDs[j];
+  //var sheetname = 'Blue_1895';//report.ShNames[j];
+  //var shtitle = 'MDOT_51400_MVA_07-24-17 to 07-30-17';//report.Title;
+  //var folderId = '0B2n7QuWDntYRVWFFRHJOZExGekU';//report.TargetFolder[1];
+  //var folderName = '07-24-17 to 07-30-17';//report.TargetFolderName;
+  var FolderStr = jet('Time Period: <a href="https://drive.google.com/drive/folders//%s" target="_blank">%s</a>',[report.TargetFolder[1],report.TargetFolderName]);//Rs.reports[0].TargetFolder[1],Rs.reports[0].TargetFolderName);
+  var ReportTitleLnk = jet('<a href="https://docs.google.com/spreadsheets/d/%s" target="_blank">%s</a>',[report.reportId,report.Title]);//Rs.reports[0].reportId,Rs.reports[0].reportName,RepExpoUrl);
+  var TClnktitle = 'Time Card pdf';
+  var PDFLink = '<a href="https://docs.google.com/spreadsheets/export?id=%s&exportFormat=pdf&fitw=true&gridlines=false&portrait=%s%s">%s</a>'; //full report
+  var getReportPDFLink = jet(PDFLink,[report.reportId,report.portrait,'','<strong>get full Report pdf</strong>']); //full report
+  //var getTCPDFLink = jet(PDFLink,[report.reportId,report.portrait,'&gid='+sheetid,TClnktitle]); //TimeCard pdf
+  
+  var tabHead = '<table style="padding-left: 20px;height: 26px;" td{padding: 15px;} width="600"><tbody>';
+  var tabFoot = '</tbody></table>';
+  var HTMLBody =FolderStr+tabHead+jet('<tr><td>%s</td><td>&nbsp;%s</td></tr>',[ReportTitleLnk,getReportPDFLink]);
+  for (var j in report.ShIDs){
+    var getTCPDFLink = jet(PDFLink,[report.reportId,report.portrait,'&gid='+report.ShIDs[j],TClnktitle]); 
+    HTMLBody += jet('<tr><td>%s</td><td>&nbsp;%s</td></tr>',[report.ShNames[j],getTCPDFLink]);
+  }
+  HTMLBody += tabFoot
+//  Logger.log('HTML BODY: '+HTMLBody);
+  return HTMLBody;
+  //  MailApp.sendEmail({ to: 'athenaconsultingllc@gmail.com', cc: '', subject: '', htmlBody: HTMLBody });
+}
+
+function checkOutFile (report,option){
+  //  DriveApp.getFolderById(id).getFiles().next().setTrashed(trashed)
+  var opt = option || GetParam('ProcessDups');
+  var f=report.TargetFolder[0].getFilesByName(report.Title);
+  if (f.hasNext()) {
+    switch (opt){
+      case 'update': //"New Hire Checklist":
+        report.Title = report.Title  + Utilities.formatDate(new Date(), 'America/New_York', "' (Update' MM-dd-yy':'HH:mm)");
+//it's already false by default        report.skipFile = false;
+        break;
+      case 'skip':
+        report.skipFile = true;
+        break;
+      case 'replace':
+        f.next().setTrashed(true);
+//it's already false by default        report.skipFile = false;
+        break;
+    }
+  }
+  return report.skipFile;
+}
+
+function cleanUpJunk (){
+  var DumpsterID='0B2n7QuWDntYRY3d4RWdIdkZjLXc';//DBox
+  //  var query = '"0B2n7QuWDntYRY3d4RWdIdkZjLXc" in parents and trashed = false and not mimeType = "application/vnd.google-apps.folder" and title contains "{{" and not title contains "{{DBPending}}:"';
+  var DN=0;//days back to clean up Drive; put -1 to clean files modified today (after last midnight); put 0 to clean files at coming midnight
+  var DyX = GetBackDate(DN,"yyyy-MM-dd'T04:00:00'");
+   var query = jet('"%s" in parents and trashed = false and modifiedDate <= "%s" and (title contains "OK" or title contains "Processed")',[DumpsterID,GetBackDate(DN,"yyyy-MM-dd'T04:00:00'")]);//createdDate is not allowed
+  var files = Drive.Files.list({maxResults: 100,q: query}); 
+  if (files.items.length==0)  return;
+  //clean up:
+  //  for (var i = 0; i < files.items.length; i++) Drive.Files.trash(files.items[i].id); 
+}
+
+function compare (){
+var Timer=[0, Number(new Date())];
+var Timer1=[0, Number(new Date())];
+for (var i=0; i<10; i++) renamefile();
+var avrg1 = timeOut(Timer1)/10;
+var Timer2=[0, Number(new Date())];
+for (var i=0; i<10; i++) renameFile();
+var avrg2 = timeOut(Timer2)/10;
+var Total = timeOut(Timer);
+Logger.log('Average for DriveApp: '+avrg1)
+Logger.log('Average for DriveFiles: '+avrg2)
+Logger.log('Total: '+Total)
+}
+
+
+function renamefile (fileId, newTitle){
+  fileId='0B2n7QuWDntYRcWRkV2U1a285NzA';
+  newTitle = 'POOSH';
+DriveApp.getFileById(fileId).setName(newTitle)
+}
+
+function renameFile(fileId, newTitle) { //~0.2" faster than DriveApp.getFileById(id).setName(name)
+  //works. Execution time 0.7-.8" passing comma-separated parents list in args would improve timing
+  //"request' contains ALL FILE METADATA (including urls)
+  fileId='0B2n7QuWDntYRcWRkV2U1a285NzA';
+  newTitle = 'POOSH';
+  var request = Drive.Files.patch({'title': newTitle},fileId);
+  }
+
+function moveFile(fileId, newTitle,targetFolderId,currentParentsList) { 
+  //works. Execution time 0.7-.8" passing comma-separated parents list in args would improve timing
+  //"request' contains ALL FILE METADATA (including urls)
+  fileId='0B2n7QuWDntYRcWRkV2U1a285NzA';
+  currentParentsList = '0B2n7QuWDntYRY3d4RWdIdkZjLXc';//DBox
+  targetFolderId = '0B2n7QuWDntYROEdJcmlsdnNSRFU';//DBox/BackUps
+  newTitle = 'POOSH';
+  var parents = (currentParentsList || Drive.Files.get(fileId).parents)
+  if (Array.isArray(parents)) for (var p in parents) currentParentsList = (currentParentsList)?','+parents[p].id:parents[p].id;
+  var request = Drive.Files.patch({'title': newTitle},fileId,{'removeParents':currentParentsList,'addParents':targetFolderId})
+  }
 
 function init(){
   setups = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
   for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
 }
 
+function jet (where,what,mrk) {var M = mrk || '%s';for (var j in what) where=where.replace(M,what[j]); M=new RegExp(M,"g");where=where.replace(M,'');return where;}
+/*uses elements of array what[] to replace %s or mrk. If N of mrk's > what.length the extra mrk's are deleted. If what.length > N(mrk) extra what[] are ignored
+https://stackoverflow.com/questions/494035/how-do-you-use-a-variable-in-a-regular-expression
+TESTING: where = 'qwerty %s bash %s et al. %s %s';
+         what = ['postQuerty', 'after bash', '1997'];*/
+
+function GetFolderByName(ParentFolder,ChildFolderName) {
+if (!ChildFolderName) return [ParentFolder,ParentFolder.getId()];
+  var folder,fi = ParentFolder.getFoldersByName(ChildFolderName);
+  (fi.hasNext()) ? folder = fi.next() : folder = ParentFolder.createFolder(ChildFolderName);
+  return [folder,folder.getId()];
+}
+
+
+ function updateSetups () {SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups)} //update setup page
+
+function GetBackDate (N,Format){//format should be "yyyy-MM-dd['optionalString'][HH:MM:SS:sss]"
+  //  var N=30;//days back
+  var format = (Format || "yyyy-MM-dd'T04:00:00'");
+  var DyX = Date.now() - 86400000 * Number(N);
+  return Utilities.formatDate(new Date(DyX), 'America/New_York', format);
+}
+
 function GetParam (param){
-//if (!prm.length) for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+if (!setups.length) setups = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
   return setups[prm.indexOf(param)][1]
 }
 
 function sortSpreadsheet (ss,NameArray) {
+//var ss=SpreadsheetApp.openById('17uA7kkVIkoE5yxEdhFVmKSFkaylwJW3zc_LMaIvZiB8');
   NameArray.sort();
   for (var j = 0; j < NameArray.length; j++) {
     var as = ss.getSheetByName(NameArray[j]);
@@ -21,13 +149,19 @@ function sortSpreadsheet (ss,NameArray) {
   }
   
 }
+function timeOut(timer){
+timer[0] += (new Date() - timer[1])*0.001;timer[1]=Number(new Date());
+return timer[0].toFixed(2);
+}
 
-function UpdateFile (fileid,fname,folderID) {
+function UpdateFile (fileid,fname,folderID) {//run time 05-06"
+//  fileid='0B2n7QuWDntYRcWRkV2U1a285NzA';
+// folderID = '0B2n7QuWDntYROEdJcmlsdnNSRFU';
+//  fname = 'POOSH';
   var payloadData = {
     title: fname,
-    parents: []
+    parents: [{ id: folderID }]
   };
-  payloadData.parents.push({ id: folderID });
   var updateParams = {
     method: 'put',
     headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
@@ -54,7 +188,7 @@ function UploadConverted (attachmentBlob) {
 }
 
 
-function sortSheets(SNames,SpreadSheet){
+function sortSheets(SNames,SpreadSheet){ //not in use
   if (SNames.length==0 || SNames=='' ){
     var SNames = []; var sheets = SpreadSheet.getSheets();
     for (var i = 0; i < sheets.length; i++) SNames.push(sheets[i].getName());
@@ -80,49 +214,7 @@ function formatTimePeriod (TimePeriod){
   return TimePeriod;
 }
 
-function updateiSolvedDB(setups,prm,fileDataResponse) {
-  var payloadData = { // Create payload (body) data for updating converted file's name and parent folder(s)
-    //        title: xlsFile,
-    parents: []
-  };
-  payloadData.parents.push({ id: setups[prm.indexOf('Archive folder ID')][1] });//Templates folder
-  var updateParams = {
-    method: 'put',
-    headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
-    contentType: 'application/json',
-    payload: JSON.stringify(payloadData)
-  };
-  UrlFetchApp.fetch('https://www.googleapis.com/drive/v2/files/' + setups[prm.indexOf('iSolvedDB_ID')][1], updateParams); // Update metadata (filename and parent folder(s)) of converted sheet
-  var payloadData = { // Create payload (body) data for updating converted file's name and parent folder(s)
-    title: xlsFile,
-    parents: []
-  };
-  payloadData.parents.push({ id: setups[prm.indexOf('Templates folder ID')][1] });//Templates folder
-  // Parameters for Drive API File Update request (see https://developers.google.com/drive/v2/reference/files/update)
-  var updateParams = {
-    method: 'put',
-    headers: { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
-    contentType: 'application/json',
-    payload: JSON.stringify(payloadData)
-  };
-  UrlFetchApp.fetch('https://www.googleapis.com/drive/v2/files/' + fileDataResponse.id, updateParams); // Update metadata (filename and parent folder(s)) of converted sheet
-  ///put name (xlsFile) and id (fileDataResponse.id) of new iSolved DB onto setup page of GMailAutomation 
-  setups[prm.indexOf('iSolvedDBName')][1]=xlsFile;
-  setups[prm.indexOf('iSolvedDB_ID')][1]=fileDataResponse.id;
-  SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups);
-  var msg = 'iSolved database has been updated with file'+DBName+' ('+SpreadsheetApp.openById(setups[prm.indexOf('iSolvedDB_ID')][1]).getUrl()+')'
-  MailApp.sendEmail({ to: TO, cc: From, subject: 'iSolved database has been successfully updated', htmlBody: msg });
-  return(msg);
-}
-
-
-
-
-
-
-
-
-function GetIndex(what,where,how){
+function GetIndex(what,where,how){//not in use
   if(what == "") return false; 
   if(how=='') how=0;
 //  var l=where.length;
@@ -132,19 +224,11 @@ function GetIndex(what,where,how){
   return -1   
 }
 
-function GetFolderByName(ParentFolder,ChildFolderName) {
+function GetFolderIdByName(ParentFolder,ChildFolderName) {
   var folder;
   var fi = ParentFolder.getFoldersByName(ChildFolderName);
-  if (fi.hasNext()) {
-    folder = fi.next();
-  } else {
-    folder = ParentFolder.createFolder(ChildFolderName);
-  }
-  return folder;
-}
-
-function NameOK (Name){
-
+  (fi.hasNext()) ? folder = fi.next() : folder = ParentFolder.createFolder(ChildFolderName);
+  return folder.getId();
 }
 
 function IsXLS(fileName) {
@@ -153,9 +237,5 @@ function IsXLS(fileName) {
   var fileExtension = temp[temp.length - 1].toLowerCase();
   if (fileExtension=='xls'||fileExtension=='xlsx') return true;
   else return false;
-}
-
-function AddWarning(){
-
 }
 
