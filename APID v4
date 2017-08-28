@@ -1,12 +1,10 @@
 function processReport (fileID,Rs,xlsFile){//DBPending == contains " : DB Pending" in the name
-  //dependencies
+/*  //dependencies
   fileID = '1yOf1AScZgM3_pT1mizQOaiRTQ6-2luYufswh5tFy-MA'; xlsFile = 'Time Card Alternative080220171045AM.xls WEEKLY';
-  
-  
   Rs = initReports(); 
- 
+*/ 
   
-  //to do : end up summary report and add it to sheet 0
+  //to do : end up summary report and add it to sheet 0 DONE
   
   var DBPending;// = GetParam("DBPending"); needs to come as a param
   (xlsFile.indexOf(Rs.DBPending)>=0) ? DBPending = true : DBPending = false;
@@ -59,7 +57,7 @@ function processReport (fileID,Rs,xlsFile){//DBPending == contains " : DB Pendin
   //if no timecard(s) found
   if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '"contains no TimeCards, skipping...');DriveApp.getFileById(fileID).setTrashed(true);return '{{Bad File}}:';}
   
-  //if no DB data found:
+   //if no DB data found:
   if (!report.Title && DBPending) {
      Logger.log('report.Title && DBPending cndition is TRUE (line 46), returning Rs.DBPending...'); 
     Rs.log.push('WARNING: iSolved DB needs update! to process file '+xlsFile+'. Current DB is "' + Rs.DBName ); 
@@ -67,25 +65,11 @@ function processReport (fileID,Rs,xlsFile){//DBPending == contains " : DB Pendin
   }
   if (!report.Title)  {
     if (!DBPending) report.Title = Rs.DBPending+xlsFile;// : report.Title = xlsFile;
-  //  (Rs.DBPendingFolder) ? report.TargetFolder = GetFolderByName(Rs.TSFolder, Rs.DBPendingFolder) : report.TargetFolder = GetFolderIdByName(Rs.TSFolder, report.TargetFolderName); //if DBPendingFolder empty - saves to Time Period folder
-//////////////    report.TargetFolder = GetFo//    if (ts.start_C > 1) sh.deleteColumns(1, ts.start_C - 1);
-    //             if (ts.start_C > 2) sh.deleteColumns(1, ts.start_C - 2); //reserved for left merging column if pdf centering can't be set upon export. If in use - correct col for landing logo from 1 to 2
-//    sh.getRange(1, report.logoColumn).setHorizontalAlignment("left").setVerticalAlignment("middle");
-//    sh.insertImage(Rs.logo, 1, report.logoColumn);
-lderByName(Rs.TSFolder, Rs.DBPendingFolder || report.TargetFolderName); //if DBPendingFolder empty - saves to Time Period folder
     Rs.log.push('WARNING: iSolved DB needs update to process file '+xlsFile+'. Current DB is "' + Rs.DBName ); //moved to finalize()
     Rs.log.push('Saved to ' + report.Title);
     Rs.log.push('Into ' + report.TargetFolderName);
- /*   ////////////////////////////////////////////////////////TEMPORARY for TESTING start:
-    for (var s in report.timesheets){
-      (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO+'_'+report.timesheets[s].EmplName.split(',')[0]) 
-      : report.ShNames.push(report.timesheets[s].EmplName.split(',')[0]+'_'+report.timesheets[s].EmplID);
-    }
-    formatTCards (report,Rs); // comment to the *end* for working version
-    // *end */  
     Logger.log ('Rs.DBPendingFolder: %s, True?: %s', Rs.DBPendingFolder, Rs.DBPendingFolder==true);
     (Rs.DBPendingFolder) ? UpdateFile(fileID, report.Title, GetFolderByName(Rs.TSFolder, Rs.DBPendingFolder)[1]) : UpdateFile(fileID, report.Title, GetParam('TimeSheetsFolder_ID'));//Rs.TSFolder.getId());
- //   UpdateFile(fileID, report.Title, report.TargetFolder[1]);
     return '{{Processed}}';//Rs.DBPending;
   }
   
@@ -101,18 +85,15 @@ lderByName(Rs.TSFolder, Rs.DBPendingFolder || report.TargetFolderName); //if DBP
   
   if (report.ShNames.length!=report.shts.length-1){Rs.log.push('NOTE: Report "' + report.Title + '"has '
                                                                + Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
-getSummary(report);//////////////////////////////THIS IS TEST POSITION! Place it before Rs.pdfLinks.push(getpdfHTML(report));
+//getSummary(report);//////////////////////////////THIS IS TEST POSITION! Place it before Rs.pdfLinks.push(getpdfHTML(report));
 Logger.log(getpdfHTML(report));
-return;
-
-
+//return;
   formatTCards (report,Rs);
-  
   //option 'replace': done in checkoutfile() old file is trashed
-  
   //sort TCards
   if (report.NameByPO && report.ShNames.length >0) sortTimeCards(report.ss,report.ShNames);
   UpdateFile(fileID, report.Title, report.TargetFolder[1]);
+  getSummary(report);
   Rs.pdfLinks.push(getpdfHTML(report));
   Rs.reports.push(report);//reserved, not currently in use
   Rs.ReportUrls.push('https://docs.google.com/spreadsheets/d/'+fileID);//(report.ss.getUrl().split('/edit')[0]);
@@ -407,4 +388,3 @@ function sortTimeCards(ss,NameArray) {
     ss.moveActiveSheet(j + 2);
   } 
 }
-
