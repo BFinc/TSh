@@ -1,0 +1,74 @@
+function GmailCheckerAPI_3(){
+  //referene materials:
+  //https://developers.google.com/apps-script/reference/gmail/gmail-message
+  //https://developers.google.com/apps-script/reference/gmail/gmail-thread
+  //https://developers.google.com/apps-script/reference/gmail/gmail-label
+  //https://developers.google.com/apps-script/reference/gmail/gmail-attachment
+   //var Labels = GmailApp.getUserLabels()[0].getName();
+  var Labels = ['Placements','TimeSheets']; //labels to process TimeSheets
+  for (var L in Labels) {
+    var label = GmailApp.getUserLabelByName(Labels[L]);
+    var thrds = label.getThreads();
+    if (thrds.length==0) continue;
+    var updateiSolvedDBase = false;
+    var Processed = GmailApp.getUserLabelByName("Processed");   
+    var max = Math.min(thrds.length, 1);
+    for (var i = 0; i < max; ++i) {
+      var cnt = thrds[i].getMessageCount();
+      var email = thrds[i].getMessages()[cnt-1]; //process ONLY THE VERY LAST MESSAGE of the thread[i]: LIFO, see Tests.gs for alternatives
+      var subj = email.getSubject();//var bcc = email.getBcc(); var cc = email.getCc();var date = email.getDate();
+      var from = email.getFrom();
+      var msgdate =email.getDate();
+      var MBody = email.getPlainBody();//Data = email.getBody();
+      switch (L.toString()){
+        case '0': //"New Hire Checklist":
+          NewHireChecklistAPI (subj,MBody);
+//          email.markRead();
+          break;
+        case '1': //"TimeSheets":
+          var attachments = email.getAttachments();
+          if (attachments.length>0) {
+  //         if (subj.toLowerCase().indexOf('isolved')>=0) var updateiSolvedDBase = true;
+           var res = saveAttachments(attachments,msgdate,from);
+//           email.markRead();
+            var pausehere = 1;//this var is for testing purpose 
+          }
+          break;
+//        default:
+ //         break;updateiSolvedDB
+      }
+      thrds[i].markRead();
+      thrds[i].removeLabel(label).addLabel(Processed);
+    }
+    //MailApp.sendEmail({to: recipient,subject: emailSubj,htmlBody: HTMLBody,replyTo: 'hr@athenajobs.com'});
+  }
+}
+
+function saveAttachments(Attachments, MsgDate, From) {
+
+//needs DUPLICATE CHECKER like : Names=xlsFile.split('.')[0].split('(')[0] if (Names.indexOf(xlsFile))>=0 skip 
+  var folder = DriveApp.getFolderById(GetParam('DumpsterFolder_ID')); //currently DBox
+  var Names =[],Urls=[], Dups=[];
+  //check if attachment is isolved DB and process:
+  for (var k = 0; k < Attachments.length; k++) {
+    var attachment = Attachments[k]; var xlsFile = attachment.getName(); if (!IsXLS(xlsFile)) continue;
+     if (Names.indexOf(xlsFile)>=0) {Dups.push(xlsFile); continue;}
+     var fileUrl=folder.createFile(attachment).getUrl(); Names.push(xlsFile);Urls.push(fileUrl);
+  }
+  var subj = 'The Documents submitted on ' + MsgDate.toString().split(' G')[0] + ' have been saved to the system ';
+  var HTMLBody = subj + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss")
+  +'<br> Total saved: '+Names.length
+  + '<p>You may find saved document(s) in the following folder:<br>'
+  + '<a href="' + folder.getUrl() + '" target="_blank">' + folder.getName() + '</а><br>'; 
+  + '<br> Saved Documents:<br>';
+  for (var i in Names) HTMLBody += '<a href="' + Urls[i] + '" target="_blank">' + Names[i] + '</a><br>';
+  if (Dups.length >0) {HTMLBody+='The following files are duplicates and have not been saved:<br>';for (var i in Dups) HTMLBody += Dups[i]+'<br>'}
+  HTMLBody += '</p><p>&nbsp;</p><p>Regards,<br />ATHENA Email Processor '+GetParam('Version')+'</p><p>&nbsp;</p>';
+//  Logger.log(HTMLBody)
+//////////////////////////////////  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
+  return;
+}
+
+
+
+
