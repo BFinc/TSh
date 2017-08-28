@@ -1,0 +1,391 @@
+function processReport_4 (fileID,Rs,xlsFile){//DBPending == contains " : DB Pending" in the name
+/*  //dependencies
+  fileID = '1yOf1AScZgM3_pT1mizQOaiRTQ6-2luYufswh5tFy-MA'; xlsFile = 'Time Card Alternative080220171045AM.xls WEEKLY';
+  Rs = initReports(); 
+*/ 
+  
+  //to do : end up summary report and add it to sheet 0 DONE
+  
+  var DBPending;// = GetParam("DBPending"); needs to come as a param
+  (xlsFile.indexOf(Rs.DBPending)>=0) ? DBPending = true : DBPending = false;
+  Logger.log('file %s is %s',xlsFile,DBPending);
+  Rs.log.push('Processing report "' + xlsFile+'"...');
+  Rs.log.push('started: ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
+//  Rs.pdfLink = 'https://docs.google.com/spreadsheets/export?id='+fileID+'&exportFormat=pdf&portrait=false';
+  
+  var report = initreport (fileID); //report===attachment
+  //moved to init report  report.ss = SpreadsheetApp.openById(fileID).getSheets()[i]  .getRange(row, column, numRows, numColumns)    .getRange(a1Notation).merge;  //getSheets()[i].getSheetId(); //converted xls file
+  //moved to init report  report.shts = report.ss.getSheets();
+  if (report.shts[0].getName() != 'Sheet1') { Rs.log.push('WARNING! File ' + xlsFile + ' does not contain Title page ("Sheet1"). Skipping...'); return; }
+  if (!getTimePeriod(report,Rs,xlsFile)) return '{{No TimePeriod found}}:';
+  Rs.log.push('Report Time Period: '+report.TimePeriod);
+  report.TargetFolderName = report.TimePeriod; //reserved if other name needed
+  //  report.TargetFolderName = 'TEST';
+    Logger.log('Time Period is %s',report.TimePeriod);
+
+//collecting TS data. output: report with Client data and TS collection as report.timesheets
+  for (var s = 1; s < report.shts.length; s++) {
+    var timecard = initTCard(report.shts[s]);//tcard == a timecard, based ot tsMap
+    timecard = getTsMap(timecard);
+//    Logger.log(timecard); Logger.log(Rs.emplids);return;
+    
+    if (!timecard.EmplName ||!timecard.EmplID) {Rs.log.push('WARNING: No data found on "Sheet' + Number(s) + '", skipping...');continue;}
+    var eid = Rs.emplids.indexOf(timecard.EmplID);
+//    Logger.log('eid (line 27): "_%s_"', eid);
+    if (eid!=-1) {report = getDBdata(eid,report,Rs);timecard.PO = report.currentPO;} else {timecard.NotInDB=true;Rs.log.push(jet('WARNING: No iSolved data found for %s (ID #%s)', [timecard.EmplName,timecard.EmplID]));}
+    report.timesheets.push(timecard);
+    report.ShIDs.push(report.shts[s].getSheetId());
+    report.POs.push(timecard.PO);
+    report.TotalHours.push(timecard.TotalHours);
+    //    report.timecardPdfUrls.push('https://docs.google.com/spreadsheets/export?id='+fileID+'&exportFormat=pdf&portrait=false&gid='+shts[s].getSheetId());
+    if (report.Client && !report.Title) {
+      report.Title = report.Client   //to future modification: report.Title = nameFile(Rs.iSolvedDB[eid],Rs.dbheader)
+      +'_'+report.LocCode+'_'+report.LocTitle+'_'+report.TimePeriod;//+Rs.PDFPending;
+      //      report = checkOutFile(report);
+      report.TargetFolder = GetFolderByName(Rs.TSFolder, report.TargetFolderName);
+      if (checkOutFile(report)) break;//checkOutFile returns report.skipFile
+    }
+  }
+  
+      report.portrait=timecard.portrait; //set report landscape to the orientation of the last card
+
+//Logger.log('');
+//Logger.log(getSummary(report));
+//return;MDOT_51500_SHA_07-24-17 to 07-30-17
+
+
+  //if no timecard(s) found
+  if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '"contains no TimeCards, skipping...');DriveApp.getFileById(fileID).setTrashed(true);return '{{Bad File}}:';}
+  
+   //if no DB data found:
+  if (!report.Title && DBPending) {
+     Logger.log('report.Title && DBPending cndition is TRUE (line 46), returning Rs.DBPending...'); 
+    Rs.log.push('WARNING: iSolved DB needs update! to process file '+xlsFile+'. Current DB is "' + Rs.DBName ); 
+    return Rs.DBPending;//return Rs.DBPending; //activate if (resp !contains KW.DBPending) is uncommented in API Drive block to prevent adding Rs.DBPending every DBPending call 
+  }
+  if (!report.Title)  {
+    if (!DBPending) report.Title = Rs.DBPending+xlsFile;// : report.Title = xlsFile;
+    Rs.log.push('WARNING: iSolved DB needs update to process file '+xlsFile+'. Current DB is "' + Rs.DBName ); //moved to finalize()
+    Rs.log.push('Saved to ' + report.Title);
+    Rs.log.push('Into ' + report.TargetFolderName);
+    Logger.log ('Rs.DBPendingFolder: %s, True?: %s', Rs.DBPendingFolder, Rs.DBPendingFolder==true);
+    (Rs.DBPendingFolder) ? UpdateFile(fileID, report.Title, GetFolderByName(Rs.TSFolder, Rs.DBPendingFolder)[1]) : UpdateFile(fileID, report.Title, GetParam('TimeSheetsFolder_ID'));//Rs.TSFolder.getId());
+    return '{{Processed}}';//Rs.DBPending;
+  }
+  
+  if (checkOutFile(report)) {
+    Rs.log.push('WARNING: File "' + report.Title + '" already exists, and process is set up to skip duplicates. Skipping...');
+    DriveApp.getFileById(fileID).setTrashed(true); return '{{Duplicate}}:';}
+  
+  //fill SNames[]
+  for (var s in report.timesheets){
+    (report.NameByPO) ? report.ShNames.push(report.timesheets[s].PO+'_'+report.timesheets[s].EmplName.split(',')[0]) 
+    : report.ShNames.push(report.timesheets[s].EmplName.split(',')[0]+'_'+report.timesheets[s].EmplID);
+  }
+  
+  if (report.ShNames.length!=report.shts.length-1){Rs.log.push('NOTE: Report "' + report.Title + '"has '
+                                                               + Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
+//getSummary(report);//////////////////////////////THIS IS TEST POSITION! Place it before Rs.pdfLinks.push(getpdfHTML(report));
+Logger.log(getpdfHTML(report));
+//return;
+  formatTCards (report,Rs);
+  //option 'replace': done in checkoutfile() old file is trashed
+  //sort TCards
+  if (report.NameByPO && report.ShNames.length >0) sortTimeCards(report.ss,report.ShNames);
+  UpdateFile(fileID, report.Title, report.TargetFolder[1]);
+  getSummary(report);
+  Rs.pdfLinks.push(getpdfHTML(report));
+  Rs.reports.push(report);//reserved, not currently in use
+  Rs.ReportUrls.push('https://docs.google.com/spreadsheets/d/'+fileID);//(report.ss.getUrl().split('/edit')[0]);
+  Rs.ReportNames.push(report.Title);
+  Rs.log.push('Total of successfully processed Timecards: ' + Number(report.ShNames.length)+' of '+ Number(report.shts.length-1));
+  Rs.log.push('Saved to ' + report.Title);
+  Rs.log.push('Processing completed: ' + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss"));
+  if (Rs.targetFolderNames.indexOf(report.TargetFolderName) == -1) {
+    Rs.targetFolderNames.push(report.TargetFolderName);
+    Rs.targetFolderUrls.push('https://drive.google.com/drive/folders/'+report.TargetFolder);
+  }
+  return '{{OK}}:';
+}
+
+function formatTCards (report,Rs){
+  for (var s in report.timesheets){
+    var ts = report.timesheets[s];
+    var sh = ts.sheet;
+    sh.setName(report.ShNames[s]);
+    var timecard = report.timesheets[s].data;
+    ts.Datarange.setWrap(false); 
+    for (var c = ts.start_C + 2; c <= ts.TotalHours_C; c++) sh.setColumnWidth(c, Rs.PunchColWidth);
+    sh.getRange(ts.Dept_R + 1, 1, ts.EmplSignature_R - ts.Dept_R - 1, timecard[0].length).sefalsetWrap(true); //wrap Punches
+    if (ts.start_R == -1) {} // process error "bad format of TS : no name row found"
+    if (ts.start_R == 1) sh.insertRowBefore(1); //{sh.insertRowBefore(1);timecard.unshift();getTsMap (timecard);}
+//    if (ts.start_R > 2) sh.deleteRows(1, ts.start_R - 2);
+    if (ts.start_R > 2) sh.hideRows(1, ts.start_R - 2);//hiding instead of deleting needed for proper work of summary collector
+//    var cardwdth = ts.TotalHours_C - ts.start_C;
+//    (cardwdth < 11) ? report.portrait=true : report.portrait=false ;
+    sh.getRange(1,ts.start_C+2,1,ts.TotalHours_C - ts.start_C-4).clear().merge().setValue('TIMECARD').setFontSize(18).setFontWeight('bold').setHorizontalAlignment("center").setVerticalAlignment("middle"); 
+    sh.getRange(1, ts.TotalHours_C).setValue(report.TimePeriod).setFontSize(14).setHorizontalAlignment("right").setVerticalAlignment("bottom").setFontWeight('bold');
+    sh.hideColumns(ts.TotalHours_C + 1, timecard[0].length - ts.TotalHours_C)
+    sh.setRowHeight(1, Number(Rs.logoHxW[0]) + 4);
+    if (ts.start_C > 1) sh.hideColumns(1, ts.start_C - 1);//hiding instead of deleting needed for proper work of summary collector
+    sh.getRange(ts.start_R, ts.start_C).setHorizontalAlignment("left").setVerticalAlignment("middle");
+    sh.insertImage(Rs.logo, ts.start_R, ts.start_C);
+  }
+  report.shts[0].hideSheet();
+}
+
+function initTCard (sh){
+  var tsmap = {sheet:sh,
+               Datarange: '',
+               data:[],
+               //               ShName:'',
+               EmplName:'',
+               EmplID:'',
+               PO:'N/A',
+               EmplID_R:-1,
+               Dept_R:-1,
+               start_R: -1,
+               start_C: -1,
+               Punches_R: -1,
+               TotalHours_C: -1,
+               TotalHours_R: -1,
+               TotalHours:'',
+               PayCodes_R:-1,
+               HourlyHours_R:-1,
+               EmplSignature_R:-1,
+               SupervisorSign_R:-1,
+               portrait:false,
+               NotInDB : false,
+               skip :false,
+               errors:[]
+              };
+  tsmap.Datarange = sh.getDataRange();
+  tsmap.data = tsmap.Datarange.getValues();
+  return tsmap;
+}
+
+function nameFile(dbrec,hdr){//reserved
+  var template = GetParam('FileName');
+  //dbrec is db line with all data
+}
+
+function getSummary(report){
+  //var sht = SpreadsheetApp.getActiveSpreadsheet().getSheets()[1];
+  //single 1D array
+  var POs = report.POs;
+  var tc = report.timesheets;
+  var TotalHrsByPO = getUnique(POs).sort(); 
+  var sRow = 20, sCol = 2;
+  var sh = POs.length-1, st = sRow+4;
+  for (var t in TotalHrsByPO) TotalHrsByPO[t]=[TotalHrsByPO[t],0];
+  for (var p in POs) {for (var t in TotalHrsByPO) if (TotalHrsByPO[t][0]==POs[p]) {TotalHrsByPO[t][1]+=Number(report.TotalHours[p]);break}}
+  report.TotalHrsByPO = TotalHrsByPO;
+  var summary = [];//,['Client'],['Location Number'],['Location Title'],['Report Export HTML']];
+  summary[summary.length]=['Client',report.Client,'',''];
+  summary[summary.length]=['Location Number',report.LocCode,'',''];
+  summary[summary.length]=['Location Title',report.LocTitle,'',''];
+  //  summary[summary.length]=['Report Export HTML',report.DownloadHTML,'',''];
+  summary.push(['Employee','PO#','Total Hours','Time Card ID']);//,['Client'],['Location Number'],['Location Title'],['Report Export HTML']];
+  //  for (var k=0; k<report.ShNames.length;k++) summary.push([report.ShNames[k],POs[k],report.TotalHours[k],jet('=VALUE(INDIRECT("%s!R%sC%s",false))',[report.ShNames[k],Number(tc[k].TotalHours_R).toFixed(0),Number(tc[k].TotalHours_C).toFixed(0)])]);//report.ShIDs[k]]);
+  for (var k=0; k<report.ShNames.length;k++) summary.push([report.ShNames[k],POs[k],jet('=VALUE(INDIRECT("%s!R%sC%s",false))',[report.ShNames[k],Number(tc[k].TotalHours_R).toFixed(0),Number(tc[k].TotalHours_C).toFixed(0)]),report.ShIDs[k]]);
+  summary[summary.length]=['Total Hours by PO','=INDIRECT("Baynes_1893!R11C10",false)','',''];
+  summary[summary.length]=['PO#','Total Worked Hours (Formula)','',''];
+  for (var p in TotalHrsByPO) summary[summary.length]=[TotalHrsByPO[p][0],jet('=SUMIF(INDIRECT("R%sC%s:R%sC%s",0),INDIRECT("C[-1]",0),INDIRECT("R%sC%s:R%sC%s",0))',[st,sCol+1,st+sh,sCol+1,st,sCol+2,st+sh,sCol+2]),'',''];
+  summary[summary.length]=['PO#','Total Worked Hours (original)','',''];
+  for (var p in TotalHrsByPO) summary[summary.length]=[TotalHrsByPO[p][0],TotalHrsByPO[p][1],'',''];
+  report.shts[0].getRange(sRow,sCol ,summary.length, summary[0].length).setValues(summary)
+  return summary;
+}
+
+//jet('=INDIRECT("%s!R%sC%s",false)',[ShNames[k],tc.TotalHours_R,tc.TotalHours_R])
+
+function initreport (fileID){
+  var report =  { ss:'',
+                 shts:[],
+                 reportId:fileID,
+                 portrait:false,
+                 TimePeriod:'',
+                 ShNames:[],
+                 ShIDs:[],
+                 POs:[],
+                 TotalHours:[],
+                 TotalHrsByPO:'',
+                 timesheets:[], //timesheet maps and values, sheet dependent
+                 TargetFolderName:'',
+                 TargetFolder:'', //[folder, ID]
+                 Title:'',
+                 DownloadHTML: '',
+                 logoColumn:1,
+                 Client:'',
+                 LocCode:'',
+                 LocTitle:'',
+                 currentPO:'',
+                 NameByPO: false,
+                 skipFile : false,
+                 fatalError:false
+                };
+  report.ss = SpreadsheetApp.openById(fileID);
+  report.shts = report.ss.getSheets();
+  return report;
+}
+
+
+function initReports(){
+  //  init();isolved -{"in use" "iSolved database has been"} -in:chats
+  var Reports =  {TSFolder : '',
+//                  TSFolderId:'',
+                  iSolvedDB : '',
+                  DBName : GetParam('iSolvedDBName'),//?
+                  dbheader:'',                 
+                  DBPending:GetParam('DBPending'),
+//                  PDFPending:GetParam('PDFPendingSfx'),
+                  DBPendingFolder:GetParam('DBPendingFolder'),
+                  DBName_Keyword:GetParam('DBName_Keyword'),
+                  BadFile:GetParam('BadFile'),
+                  emplids:[],
+                  targetFolderIDs:[],
+                  targetFolderUrls:[],
+                  targetFolderNames:[],
+                  ReportIDs:[],
+                  ReportUrls:[],
+                  ReportNames:[],
+                  reports:[],
+                  pdfLinks:[],
+                  TO:GetParam('SendNotificationTo'),
+                  logo:DriveApp.getFileById(GetParam('logoID')).getBlob(),
+                  logoHxW : GetParam('logoHxW').replace(/ /g,'').replace(/;/g,',').split(','),
+                  PunchColWidth : GetParam('PunchColWidth'),
+                  LeftMargin : GetParam('LeftMargin'),
+                  TotalBlobsize: 0,
+                  //                  TO: GetParam('SendNotificationTo'), //not in use
+                  log:[],
+                  fatalError:false
+                 };
+ //   throw 'myException'; // generates an exception
+  try {Reports.iSolvedDB = SpreadsheetApp.openById(GetParam('iSolvedDB_ID')).getSheets()[0].getDataRange().getValues();
+      }catch (e) { var emess ='Bad iSolved Databse ID identified by script '+e.stack.trim();
+                  setups[prm.indexOf('BadDataBaseFlag')][1] = emess; updateSetups();
+                  errorLog = 'WARNING! Processing Error: '+emess+'. <br>Attempting to recover...';}
+  if (errorLog) Reports.log.push(errorLog);
+  if (GetParam('BadDataBaseFlag')) {// finally {
+    var fi = DriveApp.getFolderById(GetParam('TemplatesFolder_ID')).getFilesByName(GetParam('iSolvedDBName'));
+    if (fi.hasNext()) {
+      var fi_id=fi.next().getId();
+      setups[prm.indexOf('iSolvedDB_ID')][1] = fi_id;
+      setups[prm.indexOf('BadDataBaseFlag')][1] = 0;
+      updateSetups(); //update setup page
+      Reports.log.push ('Successfully recovered DB by name from Setup page. Database in use: '+Reports.DBName );
+      Reports.iSolvedDB = SpreadsheetApp.openById(fi_id).getSheets()[0].getDataRange().getValues();
+     }  
+    else {
+      Reports.fatalError = true;
+      var   msg = jet('Fatal Error "%s"<br>Can not find iSolved database with ID=%s and name %s. <br>Processing aborted.<br>Please update iSolved Database', [GetParam('BadDataBaseFlag'), GetParam('iSolvedDB_ID'),GetParam('iSolvedDBName')]);
+      Reports.log.push('Attempt failed. '+ msg);
+      MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: 'Processing failure: Bad iSolved database ' + GetParam('iSolvedDBName'), htmlBody: 'Attempt failed. '+ msg });
+    }
+    Logger.log(Reports.log);
+//    return Reports
+  }
+  Reports.TSFolder = DriveApp.getFolderById(GetParam('TimeSheetsFolder_ID'));
+  for (var hdr in Reports.iSolvedDB) if (Reports.iSolvedDB[hdr].indexOf(GetParam('DBHeaderMarker'))>=0) break;
+  if (Number(hdr)+1 == Reports.iSolvedDB.length) {
+    var msg =  jet('WARNING! Fatal Error: Bad format of iSolved database <a href="https://docs.google.com/spreadsheets/d/%s" target="_blank">%s</a>: No header marker found. Processing aborted. Please update iSolved Database',
+              [GetParam('iSolvedDB_ID'),GetParam('iSolvedDBName')])
+ 
+    Reports.fatalError=true;
+    Reports.log.push(msg);
+    MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: 'Processing failure: Bad iSolved database ' + GetParam('iSolvedDBName'), htmlBody: msg });
+    Logger.log(Reports.log);
+    return (Reports);
+  }
+  var dbheader = Reports.iSolvedDB[hdr];
+  for (var i = 0; i < dbheader.length; i++)
+    if (Reports.iSolvedDB[hdr - 1][i] != '') dbheader[i] = Reports.iSolvedDB[hdr - 1][i] + ' ' + dbheader[i]; //else header[i] = header[i].replace('#','')
+  Reports.dbheader = dbheader;
+  var idcol = dbheader.indexOf('Employee Number');
+  for (var i = 0; i < Reports.iSolvedDB.length; i++) Reports.emplids.push(Reports.iSolvedDB[i][idcol]);
+Reports.log.push ('Database in use: '+Reports.DBName );
+  return Reports
+}
+
+function updateDB(fileid,xlsFile){
+//  var fileDataResponse = UploadConverted(BLOB);
+  UpdateFile(GetParam('iSolvedDB_ID'), GetParam('iSolvedDBName'), GetParam('ArchiveFolder_ID')); //archive old DB
+  UpdateFile(fileid, xlsFile, GetParam('TemplatesFolder_ID')); //move new DB to Templates folder
+  ///update setup sheet 
+  setups[prm.indexOf('iSolvedDBName')][1] = xlsFile;
+  setups[prm.indexOf('iSolvedDB_ID')][1] = fileid;
+  updateSetups();//SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups); //update setup page
+  //checking up new database:
+  var Rs=initReports();
+  if (Rs.fatalError) return Rs.log;
+  var msg = jet('<p>iSolved database has been updated with file <a href="https://docs.google.com/spreadsheets/d/%s" target="_blank">%s</a></p><p>Cheers,<br><br>ATHENA Time Sheet Processor %s</p>',[fileid,xlsFile,GetParam('Version')])
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: 'iSolved database has been successfully updated', htmlBody: msg });
+  return (msg);
+}
+
+
+function ProcessDB(BLOB,xlsFile){
+  var fileDataResponse = UploadConverted(BLOB);
+  UpdateFile(GetParam('iSolvedDB_ID'), GetParam('iSolvedDBName'), GetParam('ArchiveFolder_ID')); //archive old DB
+  UpdateFile(fileDataResponse.id, xlsFile, GetParam('TemplatesFolder_ID')); //move new DB to Templates folder
+  ///update setup sheet 
+  setups[prm.indexOf('iSolvedDBName')][1] = xlsFile;
+  setups[prm.indexOf('iSolvedDB_ID')][1] = fileDataResponse.id;
+  updateSetups();//SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups); //update setup page
+  //checking up new database:
+  var Rs=initReports();
+  if (Rs.fatalError) return Rs.log;
+  var msg = jet('<p>iSolved database has been updated with file <a href="https://docs.google.com/spreadsheets/d/%s" target="_blank">%s</a></p><p>ATHENA Time Sheet Processor v.15.0.4 ("Lucky Eve")</p>',[fileDataResponse.id,xlsFile])
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: 'iSolved database has been successfully updated', htmlBody: msg });
+  return (msg);
+}
+
+
+function getTimePeriod (report,Rs,xlsFile){
+  var tcard = report.shts[0].getDataRange().getValues().join('^');
+  var dr = tcard.match(/\d{1,2}\/\d{1,2}\/\d{2,4}(.+)\d{1,2}\/\d{1,2}\/\d{2,4}/);
+  if (!dr) {Rs.log.push('WARNING! File ' + xlsFile + ' does not contain properly formatted Time Period. Skipping...'); report.fatalError=true; return false; }
+  report.TimePeriod = formatTimePeriod(dr[0]);
+  return true;
+}
+
+function getDBdata(eid,report,Rs){
+  //var eid = Rs.emplids.indexOf(Timecard.EmplID);
+  report.Client = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Client Title')];
+  report.LocTitle = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Location Title')];
+  report.LocCode = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('Location Code')];
+  report.currentPO = Rs.iSolvedDB[eid][Rs.dbheader.indexOf('PO#')];
+  if ( report.Client=='Mo Co DHHS') report.NameByPO=true; //add array based exception list
+  return report
+}
+
+function getTsMap (Timecard){
+  var timecard =Timecard.data;
+  for (var i = 0; i < timecard.length; i++){
+    var r = timecard[i];
+    if (timecard[i].indexOf('Name:')>=0) {var ni=timecard[i].indexOf('Name:'); Timecard.start_R=i+1; Timecard.start_C=ni+1;Timecard.EmplName=timecard[i][ni+1];}
+    if (timecard[i].indexOf('Employee Id:')>=0) {var ni=timecard[i].indexOf('Employee Id:'); Timecard.EmplID_R=i+1;Timecard.EmplID=timecard[i][ni+1];}
+    if (timecard[i].indexOf('Department:')>=0)  {var ni=timecard[i].indexOf('Department:'); Timecard.Dept_R=i+1; Timecard.Dept=timecard[i][ni+1];}
+    if (timecard[i].indexOf('Total Hours')>=0&&Timecard.TotalHours_C==-1) {Timecard.TotalHours_C=timecard[i].indexOf('Total Hours')+1;}
+    if (timecard[i].indexOf('Punches')>=0) {Timecard.Punches_R=i+1;}
+    if (timecard[i].indexOf('Total Hours')>=0){Timecard.TotalHours_R=i+1;Timecard.TotalHours=timecard[i][Timecard.TotalHours_C-1];}
+    if (timecard[i].indexOf('Pay Codes')>=0) {Timecard.PayCodes_R=i+1;}
+    if (timecard[i].indexOf('Hourly Regular')>=0) {Timecard.HourlyHours_R=i+1;}
+    if (timecard[i].indexOf('Employee')>=0 || timecard[i].indexOf('Employee Signature:')>=0) {Timecard.EmplSignature_R=i+1;}
+    if (timecard[i].indexOf('Supervisor Signature:')>=0 || timecard[i].indexOf('Supervisor')>=0) {Timecard.SupervisorSign_R=i+1;}
+  }
+  if (Timecard.TotalHours_C - Timecard.start_C < 11) Timecard.portrait=true;
+  return Timecard;
+}
+
+function sortTimeCards(ss,NameArray) {
+//var ss=SpreadsheetApp.openById('17uA7kkVIkoE5yxEdhFVmKSFkaylwJW3zc_LMaIvZiB8');
+  NameArray.sort();
+  for (var j = 0; j < NameArray.length; j++) {
+    var as = ss.getSheetByName(NameArray[j]);
+    ss.setActiveSheet(as);
+    ss.moveActiveSheet(j + 2);
+  } 
+}
+
