@@ -20,19 +20,27 @@ function getpdfHTML(report) {
   
   var tabHead = '<table style="padding-left: 20px;height: 26px;" td{padding: 15px;} width="600"><tbody>';
   var tabFoot = '</tbody></table>';
-  var HTMLBody =FolderStr+tabHead+jet('<tr><td>%s</td><td>&nbsp;%s</td></tr>',[ReportTitleLnk,getReportPDFLink]);
+  var HTMLBody =FolderStr+tabHead+jet('<tr><td>%s</td><td>&nbsp;%s</td></tr>%s',[ReportTitleLnk,getReportPDFLink,tabFoot]);
+  HTMLBody +=tabHead+'<tr style="text-align: center;"><td>Employee</td><td>PO</td><td>Reported Hours</td><td>Export Link</td></tr>';
   for (var j in report.ShIDs){
-    var getTCPDFLink = jet(PDFLink,[report.reportId,report.portrait,'&gid='+report.ShIDs[j],TClnktitle]); 
-    HTMLBody += jet('<tr><td>%s</td><td>&nbsp;%s</td></tr>',[report.ShNames[j],getTCPDFLink]);
+    var getTCPDFLink = jet(PDFLink,[report.reportId,report.timesheets[j].portrait,'&gid='+report.ShIDs[j],TClnktitle]); 
+//OK    HTMLBody += jet('<tr><td>%s</td><td>&nbsp;%s</td></tr>',[report.ShNames[j],getTCPDFLink]);
+    HTMLBody += jet('<tr style="text-align: center;"><td style="text-align: left;">%s</td><td>%s</td><td>%s</td><td>&nbsp;%s</td></tr>',[report.ShNames[j],report.POs[j],report.TotalHours[j],getTCPDFLink]);
   }
-  HTMLBody += tabFoot
+  HTMLBody += tabFoot;
+  HTMLBody += '<strong>Summary of Total Reported Hours by PO Number:</strong><br>';
+  HTMLBody +=tabHead+'<tr style="text-align: center;"><td>PO Number</td><td>Total Hours</td></tr>';
+  for (var j in report.TotalHrsByPO){
+    HTMLBody += jet('<tr style="text-align: center;"><td>%s</td><td>&nbsp;%s</td></tr>',[report.TotalHrsByPO[j][0],report.TotalHrsByPO[j][1].toFixed(2)]);
+  }
+  HTMLBody += tabFoot;
 //  Logger.log('HTML BODY: '+HTMLBody);
   return HTMLBody;
   //  MailApp.sendEmail({ to: 'athenaconsultingllc@gmail.com', cc: '', subject: '', htmlBody: HTMLBody });
 }
 
 function checkOutFile (report,option){
-  //  DriveApp.getFolderById(id).getFiles().next().setTrashed(trashed)
+  //  DriveApp.getFolderById(id).getFiles().next().setName(name) setTrashed(trashed)
   var opt = option || GetParam('ProcessDups');
   var f=report.TargetFolder[0].getFilesByName(report.Title);
   if (f.hasNext()) {
@@ -45,7 +53,7 @@ function checkOutFile (report,option){
         report.skipFile = true;
         break;
       case 'replace':
-        f.next().setTrashed(true);
+        f.next().setName('{{Replaced}}:'+report.Title).setTrashed(true);
 //it's already false by default        report.skipFile = false;
         break;
     }
@@ -53,17 +61,20 @@ function checkOutFile (report,option){
   return report.skipFile;
 }
 
-function cleanUpJunk (){
-  var DumpsterID='0B2n7QuWDntYRY3d4RWdIdkZjLXc';//DBox
+function cleanUpJunk (){//ready
+  var DumpsterID='0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets '0B2n7QuWDntYRY3d4RWdIdkZjLXc';//DBox
+  var Recycler = '0B2n7QuWDntYRbmFIc0FINW1hakU';
   //  var query = '"0B2n7QuWDntYRY3d4RWdIdkZjLXc" in parents and trashed = false and not mimeType = "application/vnd.google-apps.folder" and title contains "{{" and not title contains "{{DBPending}}:"';
-  var DN=0;//days back to clean up Drive; put -1 to clean files modified today (after last midnight); put 0 to clean files at coming midnight
+  var DN=-1;//days back to clean up Drive; put -1 to clean files modified today (after last midnight); put 0 to clean files at coming midnight
   var DyX = GetBackDate(DN,"yyyy-MM-dd'T04:00:00'");
-   var query = jet('"%s" in parents and trashed = false and modifiedDate <= "%s" and (title contains "OK" or title contains "Processed")',[DumpsterID,GetBackDate(DN,"yyyy-MM-dd'T04:00:00'")]);//createdDate is not allowed
+//   var query = jet('("%s" in parents or "%s" in parents) and trashed = false and modifiedDate <= "%s" and (title contains "OK" or title contains "Processed")',[DumpsterID,Recycler,GetBackDate(DN,"yyyy-MM-dd'T04:00:00'")]);//createdDate is not allowed
+   var query = jet('trashed = false and modifiedDate <= "%s" and ("%s" in parents and (title contains "OK" or title contains "Processed")) or "%s" in parents',[GetBackDate(DN,"yyyy-MM-dd'T04:00:00'"),DumpsterID,Recycler]);//createdDate is not allowed
   var files = Drive.Files.list({maxResults: 100,q: query}); 
   if (files.items.length==0)  return;
   //clean up:
-  //  for (var i = 0; i < files.items.length; i++) Drive.Files.trash(files.items[i].id); 
+    for (var i = 0; i < files.items.length; i++) {Logger.log(files.items[i].title)}; //Drive.Files.trash(files.items[i].id); 
 }
+
 
 function compare (){
 var Timer=[0, Number(new Date())];
@@ -106,7 +117,7 @@ function moveFile(fileId, newTitle,targetFolderId,currentParentsList) {
   var request = Drive.Files.patch({'title': newTitle},fileId,{'removeParents':currentParentsList,'addParents':targetFolderId})
   }
 
-function init(){
+function init(){//not in use
   setups = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
   for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
 }
@@ -123,32 +134,26 @@ if (!ChildFolderName) return [ParentFolder,ParentFolder.getId()];
   (fi.hasNext()) ? folder = fi.next() : folder = ParentFolder.createFolder(ChildFolderName);
   return [folder,folder.getId()];
 }
-
-
  function updateSetups () {SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups)} //update setup page
 
 function GetBackDate (N,Format){//format should be "yyyy-MM-dd['optionalString'][HH:MM:SS:sss]"
-  //  var N=30;//days back
-  var format = (Format || "yyyy-MM-dd'T04:00:00'");
+//  var N=30;//days back
+var format = (Format || "yyyy-MM-dd'T04:00:00'");
   var DyX = Date.now() - 86400000 * Number(N);
+//  var x = new Date(DyX).toLocaleFormat("yyyy-MM-dd'T04:00:00'");//(1.4989824E12);
   return Utilities.formatDate(new Date(DyX), 'America/New_York', format);
+//  return Utilities.formatDate(new Date(DyX), 'America/New_York', "yyyy-MM-dd'T04:00:00'");
 }
 
 function GetParam (param){
-if (!setups.length) setups = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+  if (!setups.length) {
+    setups = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
+    for (var i=0; i<setups.length; i++) prm.push(setups[i][0]);
+  }
   return setups[prm.indexOf(param)][1]
 }
 
-function sortSpreadsheet (ss,NameArray) {
-//var ss=SpreadsheetApp.openById('17uA7kkVIkoE5yxEdhFVmKSFkaylwJW3zc_LMaIvZiB8');
-  NameArray.sort();
-  for (var j = 0; j < NameArray.length; j++) {
-    var as = ss.getSheetByName(NameArray[j]);
-    ss.setActiveSheet(as);
-    ss.moveActiveSheet(j + 2);
-  }
-  
-}
+
 function timeOut(timer){
 timer[0] += (new Date() - timer[1])*0.001;timer[1]=Number(new Date());
 return timer[0].toFixed(2);
@@ -214,16 +219,6 @@ function formatTimePeriod (TimePeriod){
   return TimePeriod;
 }
 
-function GetIndex(what,where,how){//not in use
-  if(what == "") return false; 
-  if(how=='') how=0;
-//  var l=where.length;
-  for (var r=0; r<where.length; r++)
-//  l=where[r];
-    if (where[r] == what) return r+how;
-  return -1   
-}
-
 function GetFolderIdByName(ParentFolder,ChildFolderName) {
   var folder;
   var fi = ParentFolder.getFoldersByName(ChildFolderName);
@@ -231,7 +226,20 @@ function GetFolderIdByName(ParentFolder,ChildFolderName) {
   return folder.getId();
 }
 
-function IsXLS(fileName) {
+ function testnewfilename (){//better use regex for terminal .xls
+ var file = 'blabla.xlsx'
+ var m = file.toLowerCase().search(/\.xlsx{0,1}$/)
+ var name = isxls(file);
+ var s=1
+ }
+
+function IsXLS(filename){return (filename.toLowerCase().search(/\.xlsx{0,1}$/)<0) ? false : true}//WORKS!
+
+
+function testisXLS(filename){return (filename.toLowerCase().indexOf('.xls')<0) ? false : true}
+function testIsXls (file) {return  (file.split('.')[file.split('.').length-1].toLowerCase().indexOf('xls')<0)?false:true}
+
+function oldIsXLS(fileName) {
   //  var fileName = attachment.getName();
   var temp = fileName.split('.');
   var fileExtension = temp[temp.length - 1].toLowerCase();
@@ -239,3 +247,41 @@ function IsXLS(fileName) {
   else return false;
 }
 
+
+function getRandomInt(min, max) {
+  /*returns a random integer between the specified values. The value is no lower than min (or the next integer greater than min if min isn't an integer), and is less than (but not equal to) max.*/
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min)) + min; //The maximum is exclusive and the minimum is inclusive
+}
+//returns unique values of linear array
+function getUnique(array){return array.reduce(function(prev, cur) {return (prev.indexOf(cur) < 0) ? prev.concat([cur]) : prev;}, []);}
+//retrurns numeric sum of the linear array elements
+function GetSum(array){return array.reduce(function (total, cur) {return total + cur})};
+
+function sortByCol(arr, colIndex){
+  arr.sort(sortFunction)
+  function sortFunction(a, b) {
+    a = a[colIndex]
+    b = b[colIndex]
+    return (a === b) ? 0 : (a < b) ? -1 : 1//ascending
+    //       return (a === b) ? 0 : (a < b) ? 1 : -1//descending
+  }
+}
+
+function SortByCol(arr, colIndex,ascdesc){//>0 or null => ascending, -1,d,D => descending
+  (ascdesc=='d'||ascdesc=='D'||ascdesc<0) 
+  ? arr.sort( function(a, b,ascdesc) {a = a[colIndex];b = b[colIndex]; return (a === b) ? 0 : (a < b) ? 1 : -1}) 
+  : arr.sort( function(a, b,ascdesc) {a = a[colIndex];b = b[colIndex]; return (a === b) ? 0 : (a < b) ? -1 : 1})
+}
+
+
+function testSorting(){
+  var a = [['FFF', 'AAA'], ['AAA', 'BBB'], [28, 'CCC'],[18, 'DDD']]
+  sortByCol(a, 0)
+  Logger.log(a);
+  var a = [['FFF', 'AAA'], ['AAA', 'BBB'], [28, 'CCC'],[18, 'DDD']]
+  SortByCol(a, 0,-10)
+  Logger.log(a);
+  // "[[12,"AAA"],[18,"DDD"],[28,"CCC"],[58,"BBB"]]"
+}
