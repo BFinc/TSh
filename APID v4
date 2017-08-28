@@ -1,7 +1,6 @@
 function CheckReportFilesAPI_4() {
   //  var ft = [MimeType.GOOGLE_DOCS,MimeType.MICROSOFT_EXCEL,MimeType.MICROSOFT_EXCEL_LEGACY];
   var Timer=[0, Number(new Date())];
-  Production
   var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
   var DumpsterName = 'TimeSheets';
   
