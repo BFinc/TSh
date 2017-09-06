@@ -116,7 +116,7 @@ function formatTCards (report,Rs){
     var timecard = report.timesheets[s].data;
     ts.Datarange.setWrap(false); 
     for (var c = ts.start_C + 2; c <= ts.TotalHours_C; c++) sh.setColumnWidth(c, Rs.PunchColWidth);
-    sh.getRange(ts.Dept_R + 1, 1, ts.EmplSignature_R - ts.Dept_R - 1, timecard[0].length).sefalsetWrap(true); //wrap Punches
+    sh.getRange(ts.Dept_R + 1, 1, ts.EmplSignature_R - ts.Dept_R - 1, timecard[0].length).setWrap(true); //wrap Punches
     if (ts.start_R == -1) {} // process error "bad format of TS : no name row found"
     if (ts.start_R == 1) sh.insertRowBefore(1); //{sh.insertRowBefore(1);timecard.unshift();getTsMap (timecard);}
 //    if (ts.start_R > 2) sh.deleteRows(1, ts.start_R - 2);
