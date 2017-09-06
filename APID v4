@@ -1,14 +1,15 @@
-function CheckReportFilesAPI_4() {
+function CheckReportFilesAPI_42() {
   //  var ft = [MimeType.GOOGLE_DOCS,MimeType.MICROSOFT_EXCEL,MimeType.MICROSOFT_EXCEL_LEGACY];
   var Timer=[0, Number(new Date())];
-  var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
+/* Production
+var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
   var DumpsterName = 'TimeSheets';
-  
- /* 
+*/  
+ 
   //tetsing:
 //  var DumpsterName = GetParam("DumpsterFolderName");
   var DumpsterID = GetParam("DumpsterFolder_ID");
- */ 
+ 
   
   var ftype = {//Excel:' mimeType contains "application/wps-office.xls" ',
     Excel:' (mimeType contains "application/wps-office.xls" or mimeType = "application/vnd.ms-excel") ',
@@ -27,7 +28,9 @@ function CheckReportFilesAPI_4() {
   var files = Drive.Files.list({maxResults: 100,q: query}); 
   if (files.items.length==0)  return;
   for (var i = 0; i < files.items.length; i++) {
-    for (var k in KW) if (files.items[i].title.indexOf(KW[k][0]) >=0) KW[k][1].push(files.items[i]);
+    for (var k in KW) {
+      if (files.items[i].title.indexOf(KW[k][0]) >=0) KW[k][1].push(files.items[i]);
+      }
   }
   if (KW.DB[1].length >1) return;//process error "More than 1 DB file to update" or select the oldest and process
   if (KW.DB[1].length ==1) {
@@ -36,10 +39,17 @@ function CheckReportFilesAPI_4() {
     else {updateDB(KW.DB[1][0].id,KW.DB[1][0].title)} 
     return
   }
-  if (KW.DBPending[1].length >0)  Reports.push(GetReports(KW.DBPending[1],Timer,TimeOut));
-  if (KW.Reports[1].length >0)  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
+  if (KW.DBPending[1].length >0) {
+  Reports.push(GetReports(KW.DBPending[1],Timer,TimeOut));
+    if(Reports.length>0) finalize(Reports,Timer);
+  Logger.log('DONE with DBPending at: '+timeOut(Timer));//,file.mimeType, file.id);
+    return;
+  }
+// if (KW.Reports[1].length >0)  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));  
+Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
   if(Reports.length>0) finalize(Reports,Timer);
-  Logger.log('DONE at: '+timeOut(Timer));//,file.mimeType, file.id);
+  Logger.log('DONE with "Reports" at: '+timeOut(Timer));//,file.mimeType, file.id);
+  return;
 }
 
 function GetReports (files,Timer,TimeOut){
@@ -53,8 +63,8 @@ function GetReports (files,Timer,TimeOut){
       var fileid = files[i].id, xlsFile = files[i].title, FILE;  // not good as has no getBlob Drive.Files.get(fileid);
       var isExcel = checkupExcel(files[i].mimeType,fileid,Timer);
       if (isExcel[0]) {FILE=isExcel[2];fileid=isExcel[1];}
-      var resp = processReport_4(fileid,Rs,xlsFile);//[{{OK}}:,{{DBPending}}:,{{BadFile}}:{{Duplicate}}, {{DB-Pending}}]
-      if (FILE && resp.indexOf(Rs.DBPending)<=0) FILE.setName(xlsFile=resp+xlsFile);
+      var resp = processReport_42(fileid,Rs,xlsFile);//[{{OK}}:,{{DBPending}}:,{{BadFile}}:{{Duplicate}}, {{DB-Pending}}]
+      if (FILE && resp.indexOf(Rs.DBPending)<=0) FILE.setName(xlsFile=(resp+xlsFile).replace(GetParam('DBPending'),''));
       if (FILE && resp=='{{BadFile}}:') FILE.setTrashed(true);//Drive.Files.trash(fileid);// or DriveApp.getFileById(fileid).setTrashed(true); //this removes converted file (untitled in root)
       Logger.log('Ended up with %s, %s: ',xlsFile, timeOut(Timer));//,file.mimeType, file.id);
     } 
@@ -83,7 +93,7 @@ function finalize(Reports,Timer){
   Logger.log(subj);
   Logger.log(HTMLBody);
   Logger.log('Total time '+timeOut(Timer));
-  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
+//  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
   return Rs.log;
 }
 
