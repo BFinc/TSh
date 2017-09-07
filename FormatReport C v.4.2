@@ -1,9 +1,9 @@
 function processReport_42 (fileID,Rs,xlsFile){//DBPending == contains " : DB Pending" in the name
- /* //dependencies
+/*  //dependencies
   fileID = '1yOf1AScZgM3_pT1mizQOaiRTQ6-2luYufswh5tFy-MA'; xlsFile = 'Time Card Alternative080220171045AM.xls WEEKLY';
   Rs = initReports(); 
- 
-*/
+ */
+
   //to do : end up summary report and add it to sheet 0 DONE
   
   var DBPending;// = GetParam("DBPending"); needs to come as a param
@@ -88,6 +88,7 @@ function processReport_42 (fileID,Rs,xlsFile){//DBPending == contains " : DB Pen
                                                                + Number(report.shts.length-1-report.ShNames.length) +' unreadable TimeCards');}
 //getSummary(report);//////////////////////////////THIS IS TEST POSITION! Place it before Rs.pdfLinks.push(getpdfHTML(report));
 Logger.log(getpdfHTML(report));
+//Logger.log('number of timesheets ========'+report.timesheets.length);
 //return;
   formatTCards (report,Rs);
   //option 'replace': done in checkoutfile() old file is trashed
@@ -110,27 +111,28 @@ Logger.log(getpdfHTML(report));
 }
 
 function formatTCards (report,Rs){
+Logger.log('start format cards');
   for (var s in report.timesheets){
     var ts = report.timesheets[s];
     var sh = ts.sheet;
     sh.setName(report.ShNames[s]);
-    var timecard = report.timesheets[s].data;
+    if (ts.start_R == -1) {} // process error "bad format of TS : no name row found"
+    if (ts.start_R == 1) sh.insertRowBefore(1); //{sh.insertRowBefore(1);timecard.unshift();getTsMap (timecard);}
+    if (ts.start_R > 2) sh.deleteRows(1, ts.start_R - 2);
+    if (ts.start_C > 1) sh.deleteColumns(1, ts.start_C - 1);
+    ts.Datarange = sh.getDataRange();
+    ts.data = report.timesheets[s].Datarange.getValues();
+    var timecard=getTsMap(report.timesheets[s]).data;
     ts.Datarange.setWrap(false); 
     for (var c = ts.start_C + 2; c <= ts.TotalHours_C; c++) sh.setColumnWidth(c, Rs.PunchColWidth);
     sh.getRange(ts.Dept_R + 1, 1, ts.EmplSignature_R - ts.Dept_R - 1, timecard[0].length).setWrap(true); //wrap Punches
-    if (ts.start_R == -1) {} // process error "bad format of TS : no name row found"
-    if (ts.start_R == 1) sh.insertRowBefore(1); //{sh.insertRowBefore(1);timecard.unshift();getTsMap (timecard);}
-//    if (ts.start_R > 2) sh.deleteRows(1, ts.start_R - 2);
-    if (ts.start_R > 2) sh.hideRows(1, ts.start_R - 2);//hiding instead of deleting needed for proper work of summary collector
-//    var cardwdth = ts.TotalHours_C - ts.start_C;
-//    (cardwdth < 11) ? report.portrait=true : report.portrait=false ;
-    sh.getRange(ts.start_R-1,ts.start_C+2,1,ts.TotalHours_C - ts.start_C-4).clear().merge().setValue('TIMECARD').setFontSize(18).setFontWeight('bold').setHorizontalAlignment("center").setVerticalAlignment("middle"); 
-    sh.getRange(ts.start_R-1, ts.TotalHours_C).setValue(report.TimePeriod).setFontSize(14).setHorizontalAlignment("right").setVerticalAlignment("bottom").setFontWeight('bold');
+    sh.getRange(1,ts.start_C+2,1,ts.TotalHours_C - ts.start_C-4).clear().merge().setValue('TIMECARD').setFontSize(18).setFontWeight('bold').setHorizontalAlignment("center").setVerticalAlignment("middle"); 
+    sh.getRange(1, ts.TotalHours_C).setValue(report.TimePeriod).setFontSize(14).setHorizontalAlignment("right").setVerticalAlignment("bottom").setFontWeight('bold');
     sh.hideColumns(ts.TotalHours_C + 1, timecard[0].length - ts.TotalHours_C)
-    sh.setRowHeight(ts.start_R-1, Number(Rs.logoHxW[0]) + 4);
+    sh.setRowHeight(1, Number(Rs.logoHxW[0]) + 4);
     if (ts.start_C > 1) sh.hideColumns(1, ts.start_C - 1);//hiding instead of deleting needed for proper work of summary collector
-    sh.getRange(ts.start_R-1, ts.start_C).setHorizontalAlignment("left").setVerticalAlignment("middle");
-    sh.insertImage(Rs.logo, ts.start_R-1, ts.start_C);
+    sh.getRange(1, ts.start_C).setHorizontalAlignment("left").setVerticalAlignment("middle");
+    sh.insertImage(Rs.logo, 1, ts.start_C);
   }
   report.shts[0].hideSheet();
 }
@@ -237,7 +239,7 @@ function initReports(){
 //                  TSFolderId:'',
                   iSolvedDB : '',
                   DBName : GetParam('iSolvedDBName'),//?
-                  dbheader:'',                 
+                  dbheader:'',
                   DBPending:GetParam('DBPending'),
 //                  PDFPending:GetParam('PDFPendingSfx'),
                   DBPendingFolder:GetParam('DBPendingFolder'),
@@ -330,7 +332,7 @@ function ProcessDB(BLOB,xlsFile){
   var fileDataResponse = UploadConverted(BLOB);
   UpdateFile(GetParam('iSolvedDB_ID'), GetParam('iSolvedDBName'), GetParam('ArchiveFolder_ID')); //archive old DB
   UpdateFile(fileDataResponse.id, xlsFile, GetParam('TemplatesFolder_ID')); //move new DB to Templates folder
-  ///update setup sheet 
+  ///update setup sheet {{OK}}:Time Card Alternative081620171240PM
   setups[prm.indexOf('iSolvedDBName')][1] = xlsFile;
   setups[prm.indexOf('iSolvedDB_ID')][1] = fileDataResponse.id;
   updateSetups();//SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().setValues(setups); //update setup page
