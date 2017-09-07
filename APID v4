@@ -1,15 +1,15 @@
 function CheckReportFilesAPI_42() {
   //  var ft = [MimeType.GOOGLE_DOCS,MimeType.MICROSOFT_EXCEL,MimeType.MICROSOFT_EXCEL_LEGACY];
   var Timer=[0, Number(new Date())];
-/* Production
+// Production
 var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
   var DumpsterName = 'TimeSheets';
-*/  
- 
+  
+/* 
   //tetsing:
 //  var DumpsterName = GetParam("DumpsterFolderName");
   var DumpsterID = GetParam("DumpsterFolder_ID");
- 
+*/ 
   
   var ftype = {//Excel:' mimeType contains "application/wps-office.xls" ',
     Excel:' (mimeType contains "application/wps-office.xls" or mimeType = "application/vnd.ms-excel") ',
@@ -93,7 +93,7 @@ function finalize(Reports,Timer){
   Logger.log(subj);
   Logger.log(HTMLBody);
   Logger.log('Total time '+timeOut(Timer));
-//  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
   return Rs.log;
 }
 
