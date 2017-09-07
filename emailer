@@ -1,4 +1,4 @@
-function GmailCheckerAPI_3(){
+function GmailCheckerAPI_42(){
   //referene materials:
   //https://developers.google.com/apps-script/reference/gmail/gmail-message
   //https://developers.google.com/apps-script/reference/gmail/gmail-thread
@@ -45,16 +45,19 @@ function GmailCheckerAPI_3(){
 }
 
 function saveAttachments(Attachments, MsgDate, From) {
-
 //needs DUPLICATE CHECKER like : Names=xlsFile.split('.')[0].split('(')[0] if (Names.indexOf(xlsFile))>=0 skip 
   var folder = DriveApp.getFolderById(GetParam('DumpsterFolder_ID')); //currently DBox
   var Names =[],Urls=[], Dups=[];
   //check if attachment is isolved DB and process:
   for (var k = 0; k < Attachments.length; k++) {
     var attachment = Attachments[k]; var xlsFile = attachment.getName(); if (!IsXLS(xlsFile)) continue;
+xlsFile = xlsFile.split('.')[0].split('(')[0];
      if (Names.indexOf(xlsFile)>=0) {Dups.push(xlsFile); continue;}
      var fileUrl=folder.createFile(attachment).getUrl(); Names.push(xlsFile);Urls.push(fileUrl);
   }
+
+return;
+
   var subj = 'The Documents submitted on ' + MsgDate.toString().split(' G')[0] + ' have been saved to the system ';
   var HTMLBody = subj + Utilities.formatDate(new Date(), 'America/New_York', "yyyy-MM-dd'_'HH:mm:ss")
   +'<br> Total saved: '+Names.length
@@ -66,9 +69,6 @@ function saveAttachments(Attachments, MsgDate, From) {
   HTMLBody += '</p><p>&nbsp;</p><p>Regards,<br />ATHENA Email Processor '+GetParam('Version')+'</p><p>&nbsp;</p>';
 //  Logger.log(HTMLBody)
 //////////////////////////////////  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
+
   return;
 }
-
-
-
-
