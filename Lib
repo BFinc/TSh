@@ -62,17 +62,20 @@ function checkOutFile (report,option){
 }
 
 function cleanUpJunk (){//ready
-  var DumpsterID='0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets '0B2n7QuWDntYRY3d4RWdIdkZjLXc';//DBox
+  var DumpsterID='0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets '0B2n7QuWDntYRY3d4RWdIdkZjLXc';//DBox 0B2n7QuWDntYRZ2tpLWk2NERjUW8
   var Recycler = '0B2n7QuWDntYRbmFIc0FINW1hakU';
   //  var query = '"0B2n7QuWDntYRY3d4RWdIdkZjLXc" in parents and trashed = false and not mimeType = "application/vnd.google-apps.folder" and title contains "{{" and not title contains "{{DBPending}}:"';
-  var DN=-1;//days back to clean up Drive; put -1 to clean files modified today (after last midnight); put 0 to clean files at coming midnight
+  var DN=14;//days back to clean up Drive; put -1 to clean files modified today (after last midnight); put 0 to clean files at coming midnight
   var DyX = GetBackDate(DN,"yyyy-MM-dd'T04:00:00'");
-//   var query = jet('("%s" in parents or "%s" in parents) and trashed = false and modifiedDate <= "%s" and (title contains "OK" or title contains "Processed")',[DumpsterID,Recycler,GetBackDate(DN,"yyyy-MM-dd'T04:00:00'")]);//createdDate is not allowed
-   var query = jet('trashed = false and modifiedDate <= "%s" and ("%s" in parents and (title contains "OK" or title contains "Processed")) or "%s" in parents',[GetBackDate(DN,"yyyy-MM-dd'T04:00:00'"),DumpsterID,Recycler]);//createdDate is not allowed
+  //   var query = jet('("%s" in parents or "%s" in parents) and trashed = false and modifiedDate <= "%s" and (title contains "OK" or title contains "Processed")',[DumpsterID,Recycler,GetBackDate(DN,"yyyy-MM-dd'T04:00:00'")]);//createdDate is not allowed
+  var query = jet('trashed = false and modifiedDate <= "%s" and ("%s" in parents and (title contains "OK" or title contains "Processed")) or "%s" in parents',[GetBackDate(DN,"yyyy-MM-dd'T04:00:00'"),DumpsterID,Recycler]);//createdDate is not allowed
   var files = Drive.Files.list({maxResults: 100,q: query}); 
   if (files.items.length==0)  return;
   //clean up:
-    for (var i = 0; i < files.items.length; i++) {Logger.log(files.items[i].title)}; //Drive.Files.trash(files.items[i].id); 
+  for (var i = 0; i < files.items.length; i++) {
+ //   Logger.log('Deleted: '+files.items[i].title)
+    Drive.Files.trash(files.items[i].id); //Logger.log(files.items[i].title); 
+  }
 }
 
 
@@ -285,3 +288,14 @@ function testSorting(){
   Logger.log(a);
   // "[[12,"AAA"],[18,"DDD"],[28,"CCC"],[58,"BBB"]]"
 }
+
+function GetIndex(what,where,how){//used in NewHireChecklist. Upgrade needed
+  if(what == "") return false; 
+  if(how=='') how=0;
+//  var l=where.length;
+  for (var r=0; r<where.length; r++)
+//  l=where[r];
+    if (where[r] == what) return r+how;
+  return -1   
+}
+
