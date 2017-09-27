@@ -1,15 +1,15 @@
 function CheckReportFilesAPI_42() {
   //  var ft = [MimeType.GOOGLE_DOCS,MimeType.MICROSOFT_EXCEL,MimeType.MICROSOFT_EXCEL_LEGACY];
   var Timer=[0, Number(new Date())];
-// Production
-var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
+  // Production
+  var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
   var DumpsterName = 'TimeSheets';
   
-/* 
+  /* 
   //tetsing:
-//  var DumpsterName = GetParam("DumpsterFolderName");
+  //  var DumpsterName = GetParam("DumpsterFolderName");
   var DumpsterID = GetParam("DumpsterFolder_ID");
-*/ 
+  */ 
   
   var ftype = {//Excel:' mimeType contains "application/wps-office.xls" ',
     Excel:' (mimeType contains "application/wps-office.xls" or mimeType = "application/vnd.ms-excel") ',
@@ -30,23 +30,30 @@ var DumpsterID = '0B2n7QuWDntYRZ2tpLWk2NERjUW8';//TimeSheets ID
   for (var i = 0; i < files.items.length; i++) {
     for (var k in KW) {
       if (files.items[i].title.indexOf(KW[k][0]) >=0) KW[k][1].push(files.items[i]);
-      }
+    }
   }
   if (KW.DB[1].length >1) return;//process error "More than 1 DB file to update" or select the oldest and process
   if (KW.DB[1].length ==1) {
     Excel = checkupExcel(KW.DB[1][0].mimeType,KW.DB[1][0].id,Timer); 
     if (Excel[0]) {updateDB(Excel[1],KW.DB[1][0].title); Excel[2].setName('{{Processed}}'+KW.DB[1][0].title)} 
     else {updateDB(KW.DB[1][0].id,KW.DB[1][0].title)} 
+    if (KW.DBPending[1].length >0) {
+      Reports.push(GetReports(KW.DBPending[1],Timer,TimeOut));
+      if(Reports.length>0) finalize(Reports,Timer);
+      Logger.log('DONE with DBPending at: '+timeOut(Timer));//,file.mimeType, file.id);
+    }
     return
   }
+  /*
   if (KW.DBPending[1].length >0) {
   Reports.push(GetReports(KW.DBPending[1],Timer,TimeOut));
-    if(Reports.length>0) finalize(Reports,Timer);
+  if(Reports.length>0) finalize(Reports,Timer);
   Logger.log('DONE with DBPending at: '+timeOut(Timer));//,file.mimeType, file.id);
-    return;
+  return;
   }
-// if (KW.Reports[1].length >0)  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));  
-Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
+  */
+  // if (KW.Reports[1].length >0)  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));  
+  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
   if(Reports.length>0) finalize(Reports,Timer);
   Logger.log('DONE with "Reports" at: '+timeOut(Timer));//,file.mimeType, file.id);
   return;
@@ -54,6 +61,7 @@ Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
 
 function GetReports (files,Timer,TimeOut){
   //alternative : DriveApp.getFoldersByName(name).next() .searchFiles(query); .searchFolders(query),  (for example "title contains 'Gulliver\\'s Travels'" or 'title contains "Gulliver\'s Travels"').
+  //alternative : var files = DriveApp.getFolderById('0B2n7QuWDntYRZ2tpLWk2NERjUW8').searchFiles('title contains "{{OK}}" and modifiedDate > "2017-09-14"');.
   if (files.length > 0) {
     Logger.log('%s files found on %s',files.length, timeOut(Timer));
     var Rs = initReports(); if (Rs.fatalError) return Rs;//(Rs.log);
@@ -93,7 +101,7 @@ function finalize(Reports,Timer){
   Logger.log(subj);
   Logger.log(HTMLBody);
   Logger.log('Total time '+timeOut(Timer));
-  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: subj, htmlBody: HTMLBody });
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: GetParam('SendCopyTo'), subject: subj, htmlBody: HTMLBody });
   return Rs.log;
 }
 
