@@ -29,8 +29,9 @@ function CheckReportFilesAPI_42() {
   if (files.items.length==0)  return;
   for (var i = 0; i < files.items.length; i++) {
     for (var k in KW) {
-      if (files.items[i].title.indexOf(KW[k][0]) >=0) KW[k][1].push(files.items[i]);
+      if (files.items[i].title.indexOf(KW[k][0]) >=0 && files.items[i].title.indexOf(KW.DBPending[0]) <0) KW[k][1].push(files.items[i]);
     }
+     if (files.items[i].title.indexOf(KW.DBPending[0]) >=0)KW.DBPending[1].push(files.items[i]);
   }
   if (KW.DB[1].length >1) return;//process error "More than 1 DB file to update" or select the oldest and process
   if (KW.DB[1].length ==1) {
