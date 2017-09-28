@@ -31,7 +31,7 @@ function CheckReportFilesAPI_42() {
     for (var k in KW) {
       if (files.items[i].title.indexOf(KW[k][0]) >=0 && files.items[i].title.indexOf(KW.DBPending[0]) <0) KW[k][1].push(files.items[i]);
     }
-     if (files.items[i].title.indexOf(KW.DBPending[0]) >=0)KW.DBPending[1].push(files.items[i]);
+    if (files.items[i].title.indexOf(KW.DBPending[0]) >=0)KW.DBPending[1].push(files.items[i]);
   }
   if (KW.DB[1].length >1) return;//process error "More than 1 DB file to update" or select the oldest and process
   if (KW.DB[1].length ==1) {
@@ -53,11 +53,12 @@ function CheckReportFilesAPI_42() {
   return;
   }
   */
-  // if (KW.Reports[1].length >0)  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));  
-  Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));
-  if(Reports.length>0) finalize(Reports,Timer);
-  Logger.log('DONE with "Reports" at: '+timeOut(Timer));//,file.mimeType, file.id);
-  return;
+  if (KW.Reports[1].length >0) { 
+    Reports.push(GetReports(KW.Reports[1],Timer,TimeOut));  
+    if(Reports.length>0) finalize(Reports,Timer);
+    Logger.log('DONE with "Reports" at: '+timeOut(Timer));//,file.mimeType, file.id);
+    return;
+  }
 }
 
 function GetReports (files,Timer,TimeOut){
