@@ -56,7 +56,7 @@ function processReport_42 (fileID,Rs,xlsFile){//DBPending == contains " : DB Pen
 
 
   //if no timecard(s) found
-  if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '"contains no TimeCards, skipping...');DriveApp.getFileById(fileID).setTrashed(true);return '{{Bad File}}:';}
+  if (report.timesheets.length==0){Rs.log.push('WARNING!: File "' + xlsFile + '" contains no TimeCards, skipping...');DriveApp.getFileById(fileID).setTrashed(true);return '{{Bad File}}:';}
   
    //if no DB data found:
   if (!report.Title && DBPending) {
@@ -323,7 +323,7 @@ function updateDB(fileid,xlsFile){
   var Rs=initReports();
   if (Rs.fatalError) return Rs.log;
   var msg = jet('<p>iSolved database has been updated with file <a href="https://docs.google.com/spreadsheets/d/%s" target="_blank">%s</a></p><p>Cheers,<br><br>ATHENA Time Sheet Processor %s</p>',[fileid,xlsFile,GetParam('Version')])
-  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: '', subject: 'iSolved database has been successfully updated', htmlBody: msg });
+  MailApp.sendEmail({ to: GetParam('SendNotificationTo'), cc: GetParam('SendCopyTo'), subject: 'iSolved database has been successfully updated', htmlBody: msg });
   return (msg);
 }
 
@@ -349,7 +349,7 @@ function getTimePeriod (report,Rs,xlsFile){
   var tcard = report.shts[0].getDataRange().getValues().join('^');
   var dr = tcard.match(/\d{1,2}\/\d{1,2}\/\d{2,4}(.+)\d{1,2}\/\d{1,2}\/\d{2,4}/);
   if (!dr) {Rs.log.push('WARNING! File ' + xlsFile + ' does not contain properly formatted Time Period. Skipping...'); report.fatalError=true; return false; }
-  report.TimePeriod = formatTimePeriod(dr[0]);
+  report.TimePeriod = formatTimePeriod(dr[0]).replace(/\s\s/g, ' ');
   return true;
 }
 
@@ -392,4 +392,3 @@ function sortTimeCards(ss,NameArray) {
     ss.moveActiveSheet(j + 2);
   } 
 }
-
